@@ -50,18 +50,20 @@ npm run dev      # http://localhost:3000
 
 ## Деплой на Vercel
 
-1. Залей проект на GitHub:
+1. Проект уже на GitHub. Для последующих изменений:
 
    ```bash
-   git remote add origin https://github.com/<логин>/<репозиторий>.git
-   git push -u origin main
+   git add -A && git commit -m "что изменил"
+   git push
    ```
+
+   Vercel пересоберёт сайт сам на каждый push в `main`.
 
 2. На [vercel.com](https://vercel.com) → **Add New → Project** → выбери репозиторий.
 
-3. **Важно:** если репозиторий содержит папку `rodion-app`, в настройках импорта
-   укажи **Root Directory → `rodion-app`**. Остальное Vercel определит сам
-   (Framework: Next.js).
+3. Ничего не меняй в настройках сборки: приложение лежит в корне репозитория,
+   поэтому **Root Directory оставь как есть**. Framework Vercel определит сам
+   (Next.js), команды сборки — тоже.
 
 4. В **Environment Variables** добавь:
 
