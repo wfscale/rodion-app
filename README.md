@@ -1,36 +1,175 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Твой рост
 
-## Getting Started
+Персональный трекер под продюсирование экспертов и личную дисциплину.
+Чеклист дня, рассылки с воронкой, библиотека офферов, заметки, XP и стрик.
 
-First, run the development server:
+**Стек:** Next.js 14 (App Router) · TypeScript · Tailwind · Supabase · Framer Motion
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+---
+
+## Запуск за 10 минут
+
+### 1. Supabase
+
+1. Создай проект на [supabase.com](https://supabase.com) (бесплатный тариф).
+2. Открой **SQL Editor → New query**, вставь целиком содержимое
+   [`supabase/schema.sql`](supabase/schema.sql) и нажми **Run**.
+   Скрипт создаёт все таблицы, RLS-политики, триггеры и функции.
+   Его можно запускать повторно — он идемпотентный.
+3. **Обязательно:** отключи подтверждение почты, иначе после регистрации
+   не будет сессии.
+   **Authentication → Sign In / Providers → Email → выключить «Confirm email» → Save.**
+4. Скопируй ключи из **Project Settings → API**.
+
+### 2. Переменные окружения
+
+Создай файл `.env.local` в корне проекта (шаблон — в `.env.local.example`):
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGci...
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Этих двух переменных достаточно, чтобы приложение работало полностью.
+`SUPABASE_SERVICE_ROLE_KEY` и переменные Google нужны только для
+синхронизации с Google Sheets — без них всё остальное работает.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+> `service_role` ключ — секретный. Никогда не добавляй к нему префикс
+> `NEXT_PUBLIC_`, иначе он уедет в браузер.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 3. Локально
 
-## Learn More
+```bash
+npm install
+npm run dev      # http://localhost:3000
+```
 
-To learn more about Next.js, take a look at the following resources:
+Открой `/auth`, зарегистрируйся — профиль создастся автоматически триггером.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Деплой на Vercel
 
-## Deploy on Vercel
+1. Залей проект на GitHub:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+   ```bash
+   git remote add origin https://github.com/<логин>/<репозиторий>.git
+   git push -u origin main
+   ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+2. На [vercel.com](https://vercel.com) → **Add New → Project** → выбери репозиторий.
+
+3. **Важно:** если репозиторий содержит папку `rodion-app`, в настройках импорта
+   укажи **Root Directory → `rodion-app`**. Остальное Vercel определит сам
+   (Framework: Next.js).
+
+4. В **Environment Variables** добавь:
+
+   | Переменная                      | Нужна для            |
+   | ------------------------------- | -------------------- |
+   | `NEXT_PUBLIC_SUPABASE_URL`      | обязательно          |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | обязательно          |
+   | `SUPABASE_SERVICE_ROLE_KEY`     | только Google Sheets |
+   | `GOOGLE_CLIENT_ID`              | только Google Sheets |
+   | `GOOGLE_CLIENT_SECRET`          | только Google Sheets |
+   | `GOOGLE_REDIRECT_URI`           | только Google Sheets |
+
+5. **Deploy**. После первого деплоя добавь свой домен в Supabase:
+   **Authentication → URL Configuration → Site URL** = `https://<проект>.vercel.app`.
+
+6. Открой сайт на телефоне и добавь на домашний экран
+   («Поделиться → На экран "Домой"») — приложение развернётся на весь экран.
+
+---
+
+## Google Sheets (необязательно)
+
+1. [console.cloud.google.com](https://console.cloud.google.com) → новый проект.
+2. **APIs & Services → Library** → включи **Google Sheets API**.
+3. **OAuth consent screen** → External → добавь себя в Test users.
+4. **Credentials → Create credentials → OAuth client ID → Web application**.
+   В **Authorized redirect URIs** добавь:
+   - `http://localhost:3000/api/google/callback`
+   - `https://<проект>.vercel.app/api/google/callback`
+5. Пропиши `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` и `GOOGLE_REDIRECT_URI`
+   (последний должен точно совпадать с тем, что в консоли Google).
+6. В приложении: **Настройки → Интеграции → Подключить Google Sheets**.
+   Таблица создастся сама при первой синхронизации; можно указать и свою по ID.
+
+Синхронизация запускается автоматически при изменении контактов и офферов
+и кнопкой «Синхронизировать сейчас». Она вторична: источник правды — Supabase,
+и её сбой никогда не мешает работе приложения.
+
+---
+
+## Как это устроено
+
+### Логический день кончается в 4:00, а не в полночь
+
+Отбой в 1:00 и задача «Лёг спать до 1:00» несовместимы с календарными сутками:
+в 00:30 календарь уже показывает завтра. Поэтому всё, что происходит до 4 утра,
+относится к предыдущему дню — `lib/date.ts`.
+
+### Стрик считается заново из истории
+
+`current_streak` в профиле — кэш, а не источник правды. Реальное значение
+каждый раз пересчитывается из записей дня (`lib/streak.ts`), поэтому не
+разъезжается после правок задним числом или входа с другого устройства.
+
+Если сегодняшний день ещё не набрал порог, серия **не рвётся** — она просто
+не включает сегодня. Иначе стрик обнулялся бы каждое утро.
+
+### XP нельзя нафармить
+
+Начисление идёт через SQL-функцию `award_xp(amount, reason, once_key)`.
+`once_key` уникален в пределах пользователя, поэтому одно и то же событие
+(«задача X отмечена 10 августа», «контакт Y перешёл в статус "созвон"»)
+начисляет опыт ровно один раз. Снять и заново поставить галочку — не сработает.
+
+### Недельные разблокировки честные
+
+Пропущенные дни считаются нулями, а не игнорируются: иначе один идеальный день
+из семи давал бы 100% среднего и открывал фишку незаслуженно (`lib/unlocks.ts`).
+
+### refresh_token Google недоступен браузеру
+
+RLS работает на уровне строк, а не колонок, поэтому доступ к токену закрыт
+колоночными грантами Postgres: роль `authenticated` может читать `sheet_id` и
+статус синхронизации, но не `refresh_token`. Его читает только сервер по
+`service_role`.
+
+---
+
+## Проверка
+
+```bash
+npm run verify   # 63 проверки логики: стрик, уровни, %, разблокировки, i18n
+npm run build    # сборка и типы
+npm run lint
+```
+
+`npm run verify` не требует базы — проверяет чистые функции и полноту словарей
+(что ни один ключ перевода не потерян).
+
+---
+
+## Структура
+
+```
+app/
+  (app)/            авторизованная часть — общий провайдер и навигация
+    page.tsx        дашборд дня
+    outreach/       рассылки + офферы (две вкладки)
+    progress/       стрик, неделя, графики, достижения
+    notes/          заметки с корзиной
+    settings/       профиль, цели, интеграции, язык, данные
+  auth/             вход и регистрация
+  api/google/       OAuth и синхронизация с Sheets
+components/         дизайн-система и компоненты экранов
+hooks/              useDaily, useOutreach, useNotes, useProfile
+lib/                xp, streak, unlocks, tasks, date, i18n, supabase
+supabase/schema.sql полная схема БД
+scripts/verify.ts   проверки логики
+```
+
+Версия 1.0.0
