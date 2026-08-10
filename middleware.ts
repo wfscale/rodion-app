@@ -61,9 +61,13 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Всё, кроме статики, картинок и OAuth-роутов Google
-     * (у них своя проверка сессии, редирект middleware сломал бы callback).
+     * Всё, кроме:
+     *  — служебных файлов Next;
+     *  — манифеста и картинок: их запрашивает система при установке ярлыка,
+     *    без сессии, и редирект на /auth сломал бы иконку и standalone-режим;
+     *  — OAuth-роутов Google: у них своя проверка сессии, редирект middleware
+     *    оборвал бы callback.
      */
-    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|icon.svg|api/google).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|api/google|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 };

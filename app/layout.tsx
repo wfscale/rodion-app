@@ -15,10 +15,19 @@ export const metadata: Metadata = {
   title: 'Твой рост',
   description: 'Дисциплина, тело и рассылки — один трекер на каждый день.',
   applicationName: 'Твой рост',
+  // Запуск с домашнего экрана без интерфейса браузера.
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
     title: 'Твой рост',
+  },
+  icons: {
+    icon: [
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    // iOS берёт именно apple-touch-icon; без него на ярлык попадёт скриншот.
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
   },
   formatDetection: { telephone: false },
 };
