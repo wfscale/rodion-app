@@ -19,6 +19,7 @@ import { UnlockToast } from '@/components/UnlockToast';
 import { useLanguage } from '@/components/LanguageProvider';
 import { getLogicalDate, shiftDate } from '@/lib/date';
 import { createClient } from '@/lib/supabase/client';
+import { syncSheets } from '@/lib/sheets-client';
 import { bonusesForStreak, computeStreak } from '@/lib/streak';
 import type { TaskDef } from '@/lib/tasks';
 import { computeUnlockLevel, summarizeWeeks, unlockedHabits, type WeekSummary } from '@/lib/unlocks';
@@ -303,6 +304,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const rest = previous.filter((log) => log.date !== today);
         return [data as DailyLog, ...rest].sort((a, b) => b.date.localeCompare(a.date));
       });
+
+      // Отложенная выгрузка в Google Sheets. Если интеграция не подключена —
+      // вызов ничего не делает; отметки чеклиста идут пачками, поэтому
+      // запрос уходит один, после паузы.
+      syncSheets();
     },
     [supabase, user, logs, today],
   );
