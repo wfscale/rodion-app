@@ -86,21 +86,70 @@ npm run dev      # http://localhost:3000
 
 ## Google Sheets (необязательно)
 
-1. [console.cloud.google.com](https://console.cloud.google.com) → новый проект.
-2. **APIs & Services → Library** → включи **Google Sheets API**.
-3. **OAuth consent screen** → External → добавь себя в Test users.
-4. **Credentials → Create credentials → OAuth client ID → Web application**.
-   В **Authorized redirect URIs** добавь:
-   - `http://localhost:3000/api/google/callback`
-   - `https://<проект>.vercel.app/api/google/callback`
-5. Пропиши `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` и `GOOGLE_REDIRECT_URI`
-   (последний должен точно совпадать с тем, что в консоли Google).
-6. В приложении: **Настройки → Интеграции → Подключить Google Sheets**.
-   Таблица создастся сама при первой синхронизации; можно указать и свою по ID.
+### 1. Секретный ключ Supabase
 
-Синхронизация запускается автоматически при изменении контактов и офферов
-и кнопкой «Синхронизировать сейчас». Она вторична: источник правды — Supabase,
-и её сбой никогда не мешает работе приложения.
+**Project Settings → API Keys** → раздел **Secret keys** → скопируй `sb_secret_…`
+(в старых проектах он называется `service_role`). Этот ключ обходит RLS —
+он нужен серверу, чтобы прочитать `refresh_token`, скрытый от браузера.
+
+Никогда не публикуй его и не добавляй префикс `NEXT_PUBLIC_`.
+
+### 2. Google Cloud
+
+1. [console.cloud.google.com](https://console.cloud.google.com) → новый проект.
+2. **APIs & Services → Library** → найди **Google Sheets API** → **Enable**.
+3. **OAuth consent screen** (в новой консоли — **Google Auth Platform**):
+   - User type: **External**
+   - App name, support email, developer contact — свои
+4. **Scopes** → добавь:
+   - `https://www.googleapis.com/auth/spreadsheets`
+   - `https://www.googleapis.com/auth/userinfo.email`
+5. **Publishing status → Publish app → In production.**
+   Обязательно: в статусе *Testing* Google убивает refresh-токен через 7 дней,
+   и синхронизация тихо перестаёт работать. В Production токен живёт постоянно.
+   Экран «Google hasn't verified this app» при входе — норма для своего проекта.
+6. **Credentials → Create credentials → OAuth client ID → Web application**.
+   В **Authorized redirect URIs** добавь ровно (символ в символ):
+   - `https://<проект>.vercel.app/api/google/callback`
+   - `http://localhost:3000/api/google/callback` — если нужен и локальный запуск
+7. Скопируй **Client ID** и **Client secret**.
+
+### 3. Переменные в Vercel
+
+**Settings → Environment Variables** — добавь четыре:
+
+| Переменная | Значение |
+| --- | --- |
+| `SUPABASE_SERVICE_ROLE_KEY` | `sb_secret_…` из шага 1 |
+| `GOOGLE_CLIENT_ID` | из шага 2.7 |
+| `GOOGLE_CLIENT_SECRET` | из шага 2.7 |
+| `GOOGLE_REDIRECT_URI` | `https://<проект>.vercel.app/api/google/callback` |
+
+Затем **обязательно передеплой**: Deployments → последний → ⋯ → **Redeploy**.
+Новые переменные не подхватываются уже собранным деплоем сами.
+
+### 4. Подключение
+
+**Настройки → Интеграции → Подключить Google Sheets** → выбрать аккаунт →
+разрешить доступ. Вернёшься в настройки со статусом «Подключено».
+
+Нажми **«Синхронизировать сейчас»** — таблица создастся автоматически, её ID
+появится в поле, рядом будет ссылка. Можно подставить и свою таблицу: вставь
+её ID из ссылки `docs.google.com/spreadsheets/d/ID/edit` (у подключённого
+Google-аккаунта должен быть доступ на редактирование).
+
+### Как это работает
+
+Три листа: **Ежедневный лог**, **Рассылки**, **Офферы**. Выгрузка запускается
+сама при сохранении дня и при изменении контактов или офферов (с задержкой,
+чтобы пачка правок дала один запрос), плюс кнопкой вручную.
+
+Каждая синхронизация **перезаписывает листы целиком** — свои правки прямо в
+таблице не переживут следующую выгрузку. Считай её витриной, а не рабочим
+документом.
+
+Интеграция вторична: источник правды — Supabase, и её сбой никогда не мешает
+работе приложения.
 
 ---
 
