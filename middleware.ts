@@ -66,8 +66,10 @@ export const config = {
      *  — манифеста и картинок: их запрашивает система при установке ярлыка,
      *    без сессии, и редирект на /auth сломал бы иконку и standalone-режим;
      *  — OAuth-роутов Google: у них своя проверка сессии, редирект middleware
-     *    оборвал бы callback.
+     *    оборвал бы callback;
+     *  — service worker: браузер запрашивает его вне сессии, и редирект
+     *    на /auth делает push невозможным в принципе.
      */
-    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|api/google|api/push|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|api/google|api/push|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 };
