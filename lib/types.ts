@@ -14,6 +14,7 @@ export const CONTACT_STATUSES = [
   'sent',
   'read',
   'replied',
+  'replied_no',
   'refused',
   'call',
   'closed',
@@ -21,7 +22,7 @@ export const CONTACT_STATUSES = [
 export type ContactStatus = (typeof CONTACT_STATUSES)[number];
 
 /** Статусы, которые считаются «дошёл до ответа». */
-export const REPLIED_STATUSES: ContactStatus[] = ['replied', 'call', 'closed'];
+export const REPLIED_STATUSES: ContactStatus[] = ['replied', 'replied_no', 'call', 'closed'];
 /** Статусы, которые считаются «дошёл до созвона». */
 export const CALL_STATUSES: ContactStatus[] = ['call', 'closed'];
 /** Отправленные — всё, кроме «ещё не написал». */
@@ -29,6 +30,7 @@ export const SENT_STATUSES: ContactStatus[] = [
   'sent',
   'read',
   'replied',
+  'replied_no',
   'refused',
   'call',
   'closed',
@@ -155,6 +157,11 @@ export type OutreachContact = {
   comment: string | null;
   next_step: string | null;
   replied_at: string | null;
+  /** Дата последнего касания — от неё считается следующее напоминание. */
+  last_touch_at: string | null;
+  touch_count: number;
+  /** Ручная пометка «больше не напоминать». */
+  muted: boolean;
   created_at: string;
   updated_at: string;
 };

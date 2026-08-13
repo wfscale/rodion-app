@@ -199,11 +199,27 @@ export const en: Dict = {
     toastRecord: '⚡ Record! {n} messages — your new maximum.',
   },
 
+  followup: {
+    title: 'Who to message today',
+    empty: 'Nobody needs a nudge today.',
+    touch: 'Touched',
+    mute: 'Stop reminding',
+    unmute: 'Resume',
+    overdue: 'overdue by {n}',
+    due: 'today',
+    soon: 'tomorrow',
+    cold: 'cold',
+    silentDays: 'silent for {n}',
+    touchNumber: 'touch {n}',
+    hint: 'Intervals grow: 2 → 5 → 10 → 21 days. After that the lead is considered cold.',
+  },
+
   statuses: {
     not_sent: 'Not sent',
     sent: 'Sent',
     read: 'Read',
     replied: 'Replied',
+    replied_no: 'Replied — no',
     refused: 'Refused',
     call: 'Call',
     closed: 'Closed',

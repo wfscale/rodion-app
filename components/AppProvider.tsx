@@ -18,7 +18,7 @@ import { LevelUpOverlay } from '@/components/overlays/LevelUpOverlay';
 import { QuotaClosedOverlay } from '@/components/overlays/QuotaClosedOverlay';
 import { Toast, type ToastData } from '@/components/overlays/Toast';
 import { useLanguage } from '@/components/LanguageProvider';
-import { cycleDay, getLogicalDate, shiftDate } from '@/lib/date';
+import { cycleDay, formatDayMonth, getLogicalDate, shiftDate } from '@/lib/date';
 import { celebrate } from '@/lib/feedback';
 import {
   onOutreachAdded,
@@ -87,6 +87,10 @@ type AppContextValue = {
   updateContact: (id: string, patch: Partial<OutreachContact>) => Promise<void>;
   setStatus: (contact: OutreachContact, status: ContactStatus) => Promise<void>;
   deleteContact: (id: string) => Promise<void>;
+  /** Отметить новое касание: сдвигает дату и двигает каскад напоминаний. */
+  touchContact: (contact: OutreachContact) => Promise<void>;
+  /** Больше не напоминать про этот контакт. */
+  muteContact: (id: string, muted: boolean) => Promise<void>;
 
   addTask: (text: string) => Promise<void>;
   toggleTask: (id: string) => Promise<void>;
@@ -496,6 +500,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const contact = data as OutreachContact;
       setContacts((previous) => [contact, ...previous]);
 
+      // Текст рассылки сразу уходит в библиотеку офферов и привязывается к
+      // контакту. Дальше результат оффера тянется за статусом сам (триггер в
+      // базе), поэтому вручную помечать «сработало / не сработало» не нужно —
+      // закономерности собираются из реальных исходов.
+      if (draft.comment.trim()) {
+        const label = (draft.niche || draft.name).trim();
+        await supabase.from('offers').insert({
+          user_id: user.id,
+          contact_id: contact.id,
+          title: `${label} · ${formatDayMonth(draft.first_contact_date, 'ru')}`,
+          niche: draft.niche || null,
+          content: draft.comment.trim(),
+          result: draft.status === 'not_sent' ? 'not_sent' : 'not_sent',
+        } as never);
+      }
+
       // Счётчик считает контакты за сегодня — новый учитываем сразу.
       const sentAfter =
         contact.first_contact_date === today ? sentToday + 1 : sentToday;
@@ -594,6 +614,54 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const { error: deleteError } = await supabase.from('outreach_contacts').delete().eq('id', id);
       if (deleteError) setError(deleteError.message);
       else void syncSheets();
+    },
+    [supabase],
+  );
+
+  /**
+   * Новое касание по контакту.
+   *
+   * Квоту не двигает намеренно: квота считает новые цели, иначе её можно было
+   * бы закрыть, перетрогав одних и тех же людей. Но труд реальный, поэтому XP
+   * начисляется — с ключом на номер касания, так что нафармить нельзя.
+   */
+  const touchContact = useCallback(
+    async (contact: OutreachContact) => {
+      const count = (contact.touch_count ?? 1) + 1;
+
+      setContacts((previous) =>
+        previous.map((c) =>
+          c.id === contact.id ? { ...c, last_touch_at: today, touch_count: count } : c,
+        ),
+      );
+
+      const { error: touchError } = await supabase
+        .from('outreach_contacts')
+        .update({ last_touch_at: today, touch_count: count } as never)
+        .eq('id', contact.id);
+
+      if (touchError) {
+        setError(touchError.message);
+        return;
+      }
+
+      await logActivity('sent', { name: contact.name, niche: contact.niche, detail: `касание ${count}` });
+
+      const key = `touch:${contact.id}:${count}`;
+      if (!attemptedKeys.current.has(key)) {
+        attemptedKeys.current.add(key);
+        await awardXp(8, 'outreach', key);
+      }
+
+      void syncSheets();
+    },
+    [supabase, today, logActivity, awardXp],
+  );
+
+  const muteContact = useCallback(
+    async (id: string, muted: boolean) => {
+      setContacts((previous) => previous.map((c) => (c.id === id ? { ...c, muted } : c)));
+      await supabase.from('outreach_contacts').update({ muted } as never).eq('id', id);
     },
     [supabase],
   );
@@ -768,6 +836,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateContact,
       setStatus,
       deleteContact,
+      touchContact,
+      muteContact,
       addTask,
       toggleTask,
       deleteTask,
@@ -781,7 +851,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }),
     [
       user, profile, today, loading, error, contacts, activity, tasks, logs, todayLog,
-      quota, levelInfo, cycleDayNumber, addContact, updateContact, setStatus, deleteContact,
+      quota, levelInfo, cycleDayNumber, addContact, updateContact, setStatus, deleteContact, touchContact, muteContact,
       addTask, toggleTask, deleteTask, toggleHabit, saveDay, submitModeCheckin,
       updateProfile, awardXp, load, signOut,
     ],

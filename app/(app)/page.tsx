@@ -13,6 +13,7 @@ import { NutritionBlock } from '@/components/home/NutritionBlock';
 import { OutreachCounter } from '@/components/home/OutreachCounter';
 import { QuickAddOutreach } from '@/components/home/QuickAddOutreach';
 import { useLanguage } from '@/components/LanguageProvider';
+import type { ContactDraft } from '@/components/outreach/ContactSheet';
 import { SoberMode } from '@/components/sober/SoberMode';
 import { Button, FullPageLoader } from '@/components/ui';
 import { useDebouncedCallback } from '@/hooks/useDebounced';
@@ -48,19 +49,10 @@ export default function HomePage() {
     app.todayLog?.wake_time || app.todayLog?.sleep_time || app.todayLog?.wake_quality,
   );
 
-  async function handleQuickAdd(name: string, niche: string) {
+  async function handleQuickAdd(draft: ContactDraft) {
     setAdding(true);
     try {
-      await app.addContact({
-        name,
-        niche,
-        telegram_handle: '',
-        instagram_url: '',
-        comment: '',
-        status: 'sent',
-        first_contact_date: app.today,
-        next_step: '',
-      });
+      await app.addContact(draft);
     } finally {
       setAdding(false);
     }
@@ -90,7 +82,7 @@ export default function HomePage() {
         nextQuota={app.quota.next}
       />
 
-      <QuickAddOutreach onAdd={handleQuickAdd} busy={adding} />
+      <QuickAddOutreach today={app.today} onAdd={handleQuickAdd} busy={adding} />
 
       <GlassCard delay={1}>
         <CardTitle>{t.home.feedTitle}</CardTitle>

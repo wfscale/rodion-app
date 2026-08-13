@@ -12,6 +12,7 @@ import { OfferSheet, type OfferDraft } from '@/components/OfferSheet';
 import { ContactCards } from '@/components/outreach/ContactCards';
 import { ContactSheet, type ContactDraft } from '@/components/outreach/ContactSheet';
 import { ContactTable, type TableSort } from '@/components/outreach/ContactTable';
+import { FollowUpList } from '@/components/outreach/FollowUpList';
 import { FunnelChart, type FunnelTarget } from '@/components/outreach/FunnelChart';
 import { PulseBar } from '@/components/PulseBar';
 import { Button, EmptyState, FilterChips, FullPageLoader, PageTitle, Segmented } from '@/components/ui';
@@ -179,6 +180,18 @@ export default function OutreachPage() {
         />
         <p className="mt-3 text-center text-sm text-muted">{funnelHint}</p>
       </GlassCard>
+
+      {/* Кому написать сегодня — рабочий список, выше таблицы */}
+      <FollowUpList
+        contacts={app.contacts}
+        today={app.today}
+        onTouch={(c) => void app.touchContact(c)}
+        onMute={(id, muted) => void app.muteContact(id, muted)}
+        onOpen={(c) => {
+          setOpenContact(c);
+          setSheetOpen(true);
+        }}
+      />
 
       {/* Квота дня */}
       <GlassCard delay={2}>
