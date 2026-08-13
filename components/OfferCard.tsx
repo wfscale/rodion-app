@@ -38,7 +38,7 @@ export function OfferCard({
         <div className="min-w-0 flex-1">
           <p className="truncate text-base font-extrabold">{offer.title}</p>
           {offer.niche && (
-            <p className="mt-0.5 text-sm text-muted">{t.niches[offer.niche]}</p>
+            <p className="mt-0.5 text-sm text-muted">{offer.niche}</p>
           )}
         </div>
 

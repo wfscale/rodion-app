@@ -109,7 +109,7 @@ export function NutritionBlock({ log, onSaveMeals, onToggleFasting }: NutritionB
           title={t.home.fasting}
           done={Boolean(log.fasting_ok)}
           onToggle={() => void onToggleFasting()}
-          xp={XP.FASTING}
+          xp={XP.HABIT}
         />
       </div>
     </div>

@@ -77,3 +77,21 @@ export function toTimeInput(value: string | null | undefined): string {
   if (!value) return '';
   return value.slice(0, 5);
 }
+
+/** «10 авг» — короткий формат даты касания в таблице рассылок. */
+export function formatDayMonth(iso: string, lang: 'ru' | 'en'): string {
+  return parseISO(iso).toLocaleDateString(lang === 'ru' ? 'ru-RU' : 'en-US', {
+    day: 'numeric',
+    month: 'short',
+  });
+}
+
+/** Сколько дней прошло с даты. Отрицательных не бывает — минимум 0. */
+export function daysSince(iso: string, today: string): number {
+  return Math.max(0, daysBetween(today, iso));
+}
+
+/** Номер дня цикла: день старта считается первым. */
+export function cycleDay(cycleStart: string, today: string): number {
+  return Math.max(1, daysBetween(today, cycleStart) + 1);
+}

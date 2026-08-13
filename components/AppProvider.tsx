@@ -13,39 +13,92 @@ import {
   type ReactNode,
 } from 'react';
 import { useRouter } from 'next/navigation';
-import { FloatingXp } from '@/components/XpBadge';
-import { LevelUpOverlay } from '@/components/LevelUpOverlay';
-import { UnlockToast } from '@/components/UnlockToast';
+import { FirstEventOverlay, type FirstEventKind } from '@/components/overlays/FirstEventOverlay';
+import { LevelUpOverlay } from '@/components/overlays/LevelUpOverlay';
+import { QuotaClosedOverlay } from '@/components/overlays/QuotaClosedOverlay';
+import { Toast, type ToastData } from '@/components/overlays/Toast';
 import { useLanguage } from '@/components/LanguageProvider';
-import { getLogicalDate, shiftDate } from '@/lib/date';
+import { cycleDay, getLogicalDate, shiftDate } from '@/lib/date';
+import { celebrate } from '@/lib/feedback';
+import {
+  onOutreachAdded,
+  onStatusChanged,
+  type GameEvent,
+  type OverlayKind,
+} from '@/lib/gamification';
+import { calculateQuota, daysUntilQuotaGrows, nextQuota, quotaPct, rollChain, rollQuotaForNewDay } from '@/lib/quota';
 import { createClient } from '@/lib/supabase/client';
 import { syncSheets } from '@/lib/sheets-client';
-import { bonusesForStreak, computeStreak } from '@/lib/streak';
-import type { TaskDef } from '@/lib/tasks';
-import { computeUnlockLevel, summarizeWeeks, unlockedHabits, type WeekSummary } from '@/lib/unlocks';
-import { levelForXp } from '@/lib/xp';
-import type { DailyLog, Profile } from '@/lib/types';
+import { featureAtLevel, getLevelInfo, levelForXp, type FeatureKey, type LevelInfo } from '@/lib/xp';
+import type {
+  ActivityEntry,
+  ActivityType,
+  ContactStatus,
+  DailyLog,
+  DailyTask,
+  OutreachContact,
+  Profile,
+} from '@/lib/types';
 
-/** Сколько дней истории держим в памяти: хватает на стрик, неделю и графики. */
+/** Сколько дней истории держим в памяти. */
 const HISTORY_DAYS = 180;
+
+export type ContactDraft = {
+  name: string;
+  niche: string;
+  telegram_handle: string;
+  instagram_url: string;
+  comment: string;
+  status: ContactStatus;
+  first_contact_date: string;
+  next_step: string;
+};
+
+type QuotaState = {
+  sent: number;
+  quota: number;
+  pct: number;
+  record: number;
+  streak: number;
+  daysToGrow: number;
+  next: number;
+  closed: boolean;
+};
 
 type AppContextValue = {
   user: User | null;
   profile: Profile | null;
-  logs: DailyLog[];
   today: string;
   loading: boolean;
   error: string | null;
 
-  streak: { current: number; longest: number; todayCounted: boolean };
-  weeks: WeekSummary[];
-  unlockLevel: number;
-  habits: TaskDef[];
+  contacts: OutreachContact[];
+  activity: ActivityEntry[];
+  tasks: DailyTask[];
+  logs: DailyLog[];
+  todayLog: DailyLog | null;
+
+  quota: QuotaState;
+  chain: number;
+  levelInfo: LevelInfo;
+  cycleDayNumber: number;
+
+  addContact: (draft: ContactDraft) => Promise<OutreachContact | null>;
+  updateContact: (id: string, patch: Partial<OutreachContact>) => Promise<void>;
+  setStatus: (contact: OutreachContact, status: ContactStatus) => Promise<void>;
+  deleteContact: (id: string) => Promise<void>;
+
+  addTask: (text: string) => Promise<void>;
+  toggleTask: (id: string) => Promise<void>;
+  deleteTask: (id: string) => Promise<void>;
+
+  toggleHabit: (habitId: string) => Promise<void>;
+  saveDay: (patch: Partial<DailyLog>) => Promise<void>;
+
+  submitModeCheckin: (held: { porn: boolean; mb: boolean; sugar: boolean }) => Promise<void>;
 
   updateProfile: (patch: Partial<Profile>) => Promise<void>;
-  /** Начисляет XP. onceKey защищает от повторного начисления за то же событие. */
   awardXp: (amount: number, reason: string, onceKey?: string) => Promise<number>;
-  upsertToday: (patch: Partial<DailyLog>) => Promise<void>;
   reload: () => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -55,25 +108,29 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
-  const { setLang } = useLanguage();
+  const { t, tf, setLang } = useLanguage();
 
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [contacts, setContacts] = useState<OutreachContact[]>([]);
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const [tasks, setTasks] = useState<DailyTask[]>([]);
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [xpEvent, setXpEvent] = useState<{ id: number; amount: number } | null>(null);
-  const [levelUp, setLevelUp] = useState<number | null>(null);
-  const [newUnlock, setNewUnlock] = useState<number | null>(null);
+  // Оверлеи и тосты
+  const [firstEvent, setFirstEvent] = useState<{ kind: FirstEventKind; xp: number } | null>(null);
+  const [quotaOverlay, setQuotaOverlay] = useState<{ open: boolean; xp: number }>({ open: false, xp: 0 });
+  const [levelUp, setLevelUp] = useState<{ level: number; feature: FeatureKey | null } | null>(null);
+  const [toast, setToast] = useState<ToastData | null>(null);
 
-  // Логический день с переносом в 4:00 — иначе задачу «лёг до 1:00»
-  // невозможно отметить, календарь уже показывает завтра.
   const [today, setToday] = useState(() => getLogicalDate());
 
   const languageApplied = useRef(false);
-  const bonusesTried = useRef<Set<string>>(new Set());
-  const unlockSynced = useRef(false);
+  const quotaRolled = useRef<string | null>(null);
+  /** Ключи, по которым уже пытались начислить — чтобы не слать лишние запросы. */
+  const attemptedKeys = useRef<Set<string>>(new Set());
 
   /* ------------------------------------------------------------------ */
   /*  Загрузка                                                           */
@@ -89,17 +146,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!currentUser) {
       setUser(null);
       setProfile(null);
-      setLogs([]);
       setLoading(false);
       return;
     }
 
     setUser(currentUser);
 
-    const since = shiftDate(getLogicalDate(), -HISTORY_DAYS);
+    const logicalToday = getLogicalDate();
+    const since = shiftDate(logicalToday, -HISTORY_DAYS);
+    const dayStart = `${logicalToday}T00:00:00`;
 
-    const [profileRes, logsRes] = await Promise.all([
+    const [profileRes, contactsRes, activityRes, tasksRes, logsRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', currentUser.id).maybeSingle(),
+      supabase
+        .from('outreach_contacts')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('activity_feed')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .gte('created_at', dayStart)
+        .order('created_at', { ascending: false })
+        .limit(40),
+      supabase
+        .from('daily_tasks')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .eq('date', logicalToday)
+        .order('created_at', { ascending: true }),
       supabase
         .from('daily_logs')
         .select('*')
@@ -116,7 +192,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     let loadedProfile = profileRes.data as Profile | null;
 
-    // Страховка: если триггер on_auth_user_created не отработал, создаём профиль.
     if (!loadedProfile) {
       const { data: created, error: createError } = await supabase
         .from('profiles')
@@ -133,9 +208,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     setProfile(loadedProfile);
+    setContacts((contactsRes.data as OutreachContact[]) ?? []);
+    setActivity((activityRes.data as ActivityEntry[]) ?? []);
+    setTasks((tasksRes.data as DailyTask[]) ?? []);
     setLogs((logsRes.data as DailyLog[]) ?? []);
 
-    // Язык из профиля применяем один раз за сессию — дальше решает пользователь.
     if (!languageApplied.current && loadedProfile.language) {
       languageApplied.current = true;
       setLang(loadedProfile.language);
@@ -148,7 +225,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     void load();
   }, [load]);
 
-  // Реагируем на выход/смену пользователя в другой вкладке.
   useEffect(() => {
     const {
       data: { subscription },
@@ -156,14 +232,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (event === 'SIGNED_OUT') {
         setUser(null);
         setProfile(null);
-        setLogs([]);
         router.replace('/auth');
       }
     });
     return () => subscription.unsubscribe();
   }, [supabase, router]);
 
-  // Дата может смениться, пока приложение открыто (например, в 4 утра).
+  // Логический день может смениться прямо во время работы (в 4 утра).
   useEffect(() => {
     const timer = setInterval(() => {
       const current = getLogicalDate();
@@ -173,7 +248,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   /* ------------------------------------------------------------------ */
-  /*  Мутации                                                            */
+  /*  Базовые мутации                                                    */
   /* ------------------------------------------------------------------ */
 
   const updateProfile = useCallback(
@@ -181,11 +256,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!user) return;
       setProfile((previous) => (previous ? { ...previous, ...patch } : previous));
 
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update(patch)
-        .eq('id', user.id);
-
+      const { error: updateError } = await supabase.from('profiles').update(patch).eq('id', user.id);
       if (updateError) setError(updateError.message);
     },
     [supabase, user],
@@ -206,67 +277,383 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return 0;
       }
 
-      const result = data as unknown as {
-        awarded: number;
-        total_xp: number;
-        level: number;
-      } | null;
-
+      const result = data as unknown as { awarded: number; total_xp: number; level: number } | null;
       if (!result || !result.awarded) return 0;
 
       const previousLevel = levelForXp(profile?.total_xp ?? 0);
 
       setProfile((previous) =>
-        previous
-          ? { ...previous, total_xp: result.total_xp, level: result.level }
-          : previous,
+        previous ? { ...previous, total_xp: result.total_xp, level: result.level } : previous,
       );
 
-      setXpEvent({ id: Date.now() + Math.random(), amount: result.awarded });
-      setTimeout(() => setXpEvent(null), 950);
-
-      if (result.level > previousLevel) setLevelUp(result.level);
+      if (result.level > previousLevel) {
+        setLevelUp({ level: result.level, feature: featureAtLevel(result.level) });
+      }
 
       return result.awarded;
     },
     [supabase, user, profile?.total_xp],
   );
 
-  const upsertToday = useCallback(
+  /** Запись события в ленту активности. */
+  const logActivity = useCallback(
+    async (type: ActivityType, input: { name?: string | null; niche?: string | null; detail?: string | null; xp?: number }) => {
+      if (!user) return;
+
+      const optimistic: ActivityEntry = {
+        id: `temp-${Date.now()}`,
+        user_id: user.id,
+        type,
+        contact_name: input.name ?? null,
+        contact_niche: input.niche ?? null,
+        detail: input.detail ?? null,
+        xp_earned: input.xp ?? 0,
+        created_at: new Date().toISOString(),
+      };
+      setActivity((previous) => [optimistic, ...previous]);
+
+      const { data } = await supabase
+        .from('activity_feed')
+        .insert({
+          user_id: user.id,
+          type,
+          contact_name: input.name ?? null,
+          contact_niche: input.niche ?? null,
+          detail: input.detail ?? null,
+          xp_earned: input.xp ?? 0,
+        })
+        .select('*')
+        .single();
+
+      if (data) {
+        setActivity((previous) => [data as ActivityEntry, ...previous.filter((e) => e.id !== optimistic.id)]);
+      }
+    },
+    [supabase, user],
+  );
+
+  /* ------------------------------------------------------------------ */
+  /*  Производные значения                                               */
+  /* ------------------------------------------------------------------ */
+
+  /** Рассылки за сегодня: считаем по дате касания, а не по created_at —
+   *  дату можно поставить задним числом, и счётчик должен это уважать. */
+  const sentToday = useMemo(
+    () => contacts.filter((c) => c.first_contact_date === today).length,
+    [contacts, today],
+  );
+
+  const quota = useMemo<QuotaState>(() => {
+    const q = profile?.current_quota ?? calculateQuota(profile?.quota_streak ?? 0);
+    const streak = profile?.quota_streak ?? 0;
+    return {
+      sent: sentToday,
+      quota: q,
+      pct: quotaPct(sentToday, q),
+      record: profile?.daily_record ?? 0,
+      streak,
+      daysToGrow: daysUntilQuotaGrows(streak),
+      next: nextQuota(streak),
+      closed: sentToday >= q,
+    };
+  }, [profile?.current_quota, profile?.quota_streak, profile?.daily_record, sentToday]);
+
+  const levelInfo = useMemo(() => getLevelInfo(profile?.total_xp ?? 0, t), [profile?.total_xp, t]);
+
+  const cycleDayNumber = useMemo(
+    () => (profile ? cycleDay(profile.cycle_start_date, today) : 1),
+    [profile, today],
+  );
+
+  const todayLog = useMemo(() => logs.find((l) => l.date === today) ?? null, [logs, today]);
+
+  /* ------------------------------------------------------------------ */
+  /*  Пересчёт квоты и цепочки на новый день                             */
+  /* ------------------------------------------------------------------ */
+
+  useEffect(() => {
+    if (!profile || loading) return;
+    if (quotaRolled.current === today) return;
+    if (profile.quota_last_date === today) {
+      quotaRolled.current = today;
+      return;
+    }
+
+    quotaRolled.current = today;
+
+    const yesterday = shiftDate(today, -1);
+    const yesterdaySent = contacts.filter((c) => c.first_contact_date === yesterday).length;
+
+    const rolled = rollQuotaForNewDay({
+      quotaStreak: profile.quota_streak ?? 0,
+      quotaLastDate: profile.quota_last_date,
+      yesterdaySent,
+      yesterdayQuota: profile.current_quota ?? 5,
+      today,
+    });
+
+    if (rolled.changed) {
+      void updateProfile({
+        quota_streak: rolled.quotaStreak,
+        current_quota: rolled.currentQuota,
+        quota_last_date: today,
+      });
+    }
+  }, [profile, contacts, today, loading, updateProfile]);
+
+  /* ------------------------------------------------------------------ */
+  /*  Проигрывание каскада                                               */
+  /* ------------------------------------------------------------------ */
+
+  const toastText = useCallback(
+    (key: string, vars?: Record<string, number>) => {
+      switch (key) {
+        case 'record':
+          return tf(t.outreach.toastRecord, { n: vars?.n ?? 0 });
+        case 'round':
+          return tf(t.outreach.toastRound, { n: vars?.n ?? 0 });
+        case 'added':
+          return `+${vars?.n ?? 0} XP · ${t.outreach.toastAdded}`;
+        case 'replied':
+          return `+${vars?.n ?? 0} XP · ${t.xpReasons.replied}`;
+        case 'call':
+          return `+${vars?.n ?? 0} XP · ${t.xpReasons.call}`;
+        case 'closed':
+          return `+${vars?.n ?? 0} XP · ${t.xpReasons.closed}`;
+        default:
+          return '';
+      }
+    },
+    [t, tf],
+  );
+
+  const runEvents = useCallback(
+    async (events: GameEvent[]) => {
+      const overlayFor: Record<OverlayKind, FirstEventKind | null> = {
+        quota: null,
+        'first-reply': 'reply',
+        'first-call': 'call',
+        'first-closed': 'closed',
+      };
+
+      for (const event of events) {
+        if (event.kind === 'fx') {
+          celebrate(event.fx, profile?.sound_enabled ?? false);
+        } else if (event.kind === 'xp') {
+          if (event.onceKey) {
+            if (attemptedKeys.current.has(event.onceKey)) continue;
+            attemptedKeys.current.add(event.onceKey);
+          }
+          await awardXp(event.amount, event.reason, event.onceKey);
+        } else if (event.kind === 'toast') {
+          setToast({ id: Date.now() + Math.random(), text: toastText(event.textKey, event.vars), tone: event.tone });
+          setTimeout(() => setToast(null), 1800);
+        } else if (event.kind === 'overlay') {
+          if (event.overlay === 'quota') setQuotaOverlay({ open: true, xp: event.xp });
+          else {
+            const kind = overlayFor[event.overlay];
+            if (kind) setFirstEvent({ kind, xp: event.xp });
+          }
+        } else if (event.kind === 'profile') {
+          await updateProfile(event.patch as Partial<Profile>);
+        }
+      }
+    },
+    [awardXp, updateProfile, toastText, profile?.sound_enabled],
+  );
+
+  /* ------------------------------------------------------------------ */
+  /*  Контакты                                                           */
+  /* ------------------------------------------------------------------ */
+
+  const addContact = useCallback(
+    async (draft: ContactDraft): Promise<OutreachContact | null> => {
+      if (!user) return null;
+
+      const now = new Date().toISOString();
+      const { data, error: insertError } = await supabase
+        .from('outreach_contacts')
+        .insert({
+          user_id: user.id,
+          name: draft.name,
+          niche: draft.niche || null,
+          telegram_handle: draft.telegram_handle || null,
+          instagram_url: draft.instagram_url || null,
+          comment: draft.comment || null,
+          next_step: draft.next_step || null,
+          status: draft.status,
+          first_contact_date: draft.first_contact_date,
+          status_history: [{ status: draft.status, at: now }],
+        } as never)
+        .select('*')
+        .single();
+
+      if (insertError) {
+        setError(insertError.message);
+        return null;
+      }
+
+      const contact = data as OutreachContact;
+      setContacts((previous) => [contact, ...previous]);
+
+      // Счётчик считает контакты за сегодня — новый учитываем сразу.
+      const sentAfter =
+        contact.first_contact_date === today ? sentToday + 1 : sentToday;
+
+      await logActivity('sent', { name: contact.name, niche: contact.niche });
+
+      if (contact.first_contact_date === today) {
+        await runEvents(
+          onOutreachAdded({
+            sentToday: sentAfter,
+            quota: quota.quota,
+            record: quota.record,
+            date: today,
+            awardedBonusSteps: [],
+          }),
+        );
+
+        // Цепочка дней с хотя бы одной рассылкой.
+        if (profile && profile.chain_last_date !== today) {
+          const chain = rollChain({
+            chainDays: profile.chain_days ?? 0,
+            chainLastDate: profile.chain_last_date,
+            today,
+          });
+          await updateProfile({ chain_days: chain, chain_last_date: today });
+        }
+      }
+
+      void syncSheets();
+      return contact;
+    },
+    [supabase, user, today, sentToday, quota.quota, quota.record, logActivity, runEvents, profile, updateProfile],
+  );
+
+  const setStatus = useCallback(
+    async (contact: OutreachContact, status: ContactStatus) => {
+      if (contact.status === status) return;
+      if (!profile) return;
+
+      const now = new Date().toISOString();
+      const history = [...(contact.status_history ?? []), { status, at: now }];
+
+      const patch: Partial<OutreachContact> = { status, status_history: history };
+      // Момент первого ответа нужен счётчику скорости (уровень 4).
+      if (status === 'replied' && !contact.replied_at) patch.replied_at = now;
+
+      setContacts((previous) =>
+        previous.map((c) => (c.id === contact.id ? { ...c, ...patch, updated_at: now } : c)),
+      );
+
+      const { error: updateError } = await supabase
+        .from('outreach_contacts')
+        .update(patch as never)
+        .eq('id', contact.id);
+
+      if (updateError) {
+        setError(updateError.message);
+        return;
+      }
+
+      if (status === 'replied' || status === 'call' || status === 'closed') {
+        await logActivity(status, { name: contact.name, niche: contact.niche });
+      }
+
+      await runEvents(
+        onStatusChanged({
+          contactId: contact.id,
+          status,
+          hadFirstReply: Boolean(profile.first_reply_at),
+          hadFirstCall: Boolean(profile.first_call_at),
+          hadFirstClosed: Boolean(profile.first_closed_at),
+        }),
+      );
+
+      void syncSheets();
+    },
+    [supabase, profile, logActivity, runEvents],
+  );
+
+  const updateContact = useCallback(
+    async (id: string, patch: Partial<OutreachContact>) => {
+      setContacts((previous) => previous.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+      const { error: updateError } = await supabase
+        .from('outreach_contacts')
+        .update(patch as never)
+        .eq('id', id);
+      if (updateError) setError(updateError.message);
+      else void syncSheets();
+    },
+    [supabase],
+  );
+
+  const deleteContact = useCallback(
+    async (id: string) => {
+      setContacts((previous) => previous.filter((c) => c.id !== id));
+      const { error: deleteError } = await supabase.from('outreach_contacts').delete().eq('id', id);
+      if (deleteError) setError(deleteError.message);
+      else void syncSheets();
+    },
+    [supabase],
+  );
+
+  /* ------------------------------------------------------------------ */
+  /*  Задачи дня                                                         */
+  /* ------------------------------------------------------------------ */
+
+  const addTask = useCallback(
+    async (text: string) => {
+      if (!user || !text.trim()) return;
+      const { data } = await supabase
+        .from('daily_tasks')
+        .insert({ user_id: user.id, date: today, text: text.trim() })
+        .select('*')
+        .single();
+      if (data) setTasks((previous) => [...previous, data as DailyTask]);
+    },
+    [supabase, user, today],
+  );
+
+  const toggleTask = useCallback(
+    async (id: string) => {
+      const task = tasks.find((x) => x.id === id);
+      if (!task) return;
+      const completed = !task.completed;
+      setTasks((previous) => previous.map((x) => (x.id === id ? { ...x, completed } : x)));
+      await supabase.from('daily_tasks').update({ completed }).eq('id', id);
+    },
+    [supabase, tasks],
+  );
+
+  const deleteTask = useCallback(
+    async (id: string) => {
+      setTasks((previous) => previous.filter((x) => x.id !== id));
+      await supabase.from('daily_tasks').delete().eq('id', id);
+    },
+    [supabase],
+  );
+
+  /* ------------------------------------------------------------------ */
+  /*  День: привычки, чекин, питание                                     */
+  /* ------------------------------------------------------------------ */
+
+  const saveDay = useCallback(
     async (patch: Partial<DailyLog>) => {
       if (!user) return;
 
-      const existing = logs.find((log) => log.date === today);
-
-      // Оптимистично обновляем UI — кольцо и галочки не должны ждать сеть.
-      const optimistic: DailyLog = {
-        ...(existing ??
-          ({
-            id: `temp-${today}`,
-            user_id: user.id,
-            date: today,
-            sleep_time: null,
-            wake_time: null,
-            wake_quality: null,
-            morning_comment: null,
-            checklist: {},
-            custom_tasks: [],
-            meal_1_time: null,
-            meal_1_note: null,
-            meal_2_time: null,
-            meal_2_note: null,
-            fasting_ok: false,
-            day_comment: null,
-            completion_pct: 0,
-            xp_earned: 0,
-            created_at: new Date().toISOString(),
-          } as DailyLog)),
+      const existing = logs.find((l) => l.date === today);
+      const merged = {
+        checklist: existing?.checklist ?? {},
+        custom_tasks: existing?.custom_tasks ?? [],
+        fasting_ok: existing?.fasting_ok ?? false,
+        ...existing,
         ...patch,
-      };
+      } as DailyLog;
 
       setLogs((previous) => {
-        const rest = previous.filter((log) => log.date !== today);
-        return [optimistic, ...rest].sort((a, b) => b.date.localeCompare(a.date));
+        const rest = previous.filter((l) => l.date !== today);
+        return [{ ...merged, date: today, user_id: user.id } as DailyLog, ...rest];
       });
 
       const { data, error: upsertError } = await supabase
@@ -275,19 +662,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
           {
             user_id: user.id,
             date: today,
-            sleep_time: optimistic.sleep_time,
-            wake_time: optimistic.wake_time,
-            wake_quality: optimistic.wake_quality,
-            morning_comment: optimistic.morning_comment,
-            checklist: optimistic.checklist,
-            custom_tasks: optimistic.custom_tasks,
-            meal_1_time: optimistic.meal_1_time,
-            meal_1_note: optimistic.meal_1_note,
-            meal_2_time: optimistic.meal_2_time,
-            meal_2_note: optimistic.meal_2_note,
-            fasting_ok: optimistic.fasting_ok,
-            day_comment: optimistic.day_comment,
-            completion_pct: optimistic.completion_pct,
+            sleep_time: merged.sleep_time ?? null,
+            wake_time: merged.wake_time ?? null,
+            wake_quality: merged.wake_quality ?? null,
+            morning_comment: merged.morning_comment ?? null,
+            checklist: merged.checklist ?? {},
+            custom_tasks: merged.custom_tasks ?? [],
+            meal_1_time: merged.meal_1_time ?? null,
+            meal_1_note: merged.meal_1_note ?? null,
+            meal_2_time: merged.meal_2_time ?? null,
+            meal_2_note: merged.meal_2_note ?? null,
+            fasting_ok: merged.fasting_ok ?? false,
+            day_comment: merged.day_comment ?? null,
           },
           { onConflict: 'user_id,date' },
         )
@@ -299,18 +685,59 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Подменяем временную запись настоящей (нужен реальный id).
       setLogs((previous) => {
-        const rest = previous.filter((log) => log.date !== today);
-        return [data as DailyLog, ...rest].sort((a, b) => b.date.localeCompare(a.date));
+        const rest = previous.filter((l) => l.date !== today);
+        return [data as DailyLog, ...rest];
       });
 
-      // Отложенная выгрузка в Google Sheets. Если интеграция не подключена —
-      // вызов ничего не делает; отметки чеклиста идут пачками, поэтому
-      // запрос уходит один, после паузы.
-      syncSheets();
+      void syncSheets();
     },
     [supabase, user, logs, today],
+  );
+
+  const toggleHabit = useCallback(
+    async (habitId: string) => {
+      const current = todayLog?.checklist ?? {};
+      const turningOn = !current[habitId];
+      await saveDay({ checklist: { ...current, [habitId]: turningOn } });
+
+      // Привычка стоит символический 1 XP — она гигиена, а не результат.
+      if (turningOn) {
+        const key = `habit:${today}:${habitId}`;
+        if (!attemptedKeys.current.has(key)) {
+          attemptedKeys.current.add(key);
+          await awardXp(1, 'habit', key);
+        }
+      }
+    },
+    [todayLog?.checklist, saveDay, awardXp, today],
+  );
+
+  /* ------------------------------------------------------------------ */
+  /*  Вечерний чекин режима                                              */
+  /* ------------------------------------------------------------------ */
+
+  const submitModeCheckin = useCallback(
+    async (held: { porn: boolean; mb: boolean; sugar: boolean }) => {
+      if (!profile) return;
+
+      await updateProfile({
+        mode_porn_days: held.porn ? (profile.mode_porn_days ?? 0) + 1 : 0,
+        mode_mb_days: held.mb ? (profile.mode_mb_days ?? 0) + 1 : 0,
+        mode_sugar_days: held.sugar ? (profile.mode_sugar_days ?? 0) + 1 : 0,
+        mode_last_checkin: today,
+      });
+
+      // Полностью выдержанный день награждается один раз за сутки.
+      if (held.porn && held.mb && held.sugar) {
+        const key = `mode:${today}`;
+        if (!attemptedKeys.current.has(key)) {
+          attemptedKeys.current.add(key);
+          await awardXp(8, 'mode', key);
+        }
+      }
+    },
+    [profile, updateProfile, awardXp, today],
   );
 
   const signOut = useCallback(async () => {
@@ -320,107 +747,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [supabase, router]);
 
   /* ------------------------------------------------------------------ */
-  /*  Производные значения                                               */
-  /* ------------------------------------------------------------------ */
-
-  const threshold = profile?.streak_threshold ?? 70;
-
-  const streak = useMemo(
-    () => computeStreak(logs, threshold, today),
-    [logs, threshold, today],
-  );
-
-  const weeks = useMemo(() => {
-    if (!profile) return [];
-    return summarizeWeeks(logs, profile.created_at.slice(0, 10), today);
-  }, [logs, profile, today]);
-
-  const unlockLevel = useMemo(() => computeUnlockLevel(weeks), [weeks]);
-  const habits = useMemo(() => unlockedHabits(unlockLevel), [unlockLevel]);
-
-  /* ------------------------------------------------------------------ */
-  /*  Побочные эффекты геймификации                                      */
-  /* ------------------------------------------------------------------ */
-
-  // Стрик пересчитывается из истории и сохраняется в профиль,
-  // чтобы значение было одинаковым на всех устройствах.
-  useEffect(() => {
-    if (!profile) return;
-
-    const needsUpdate =
-      streak.current !== profile.current_streak ||
-      streak.longest > profile.longest_streak ||
-      (streak.todayCounted && profile.last_active_date !== today);
-
-    if (needsUpdate) {
-      void updateProfile({
-        current_streak: streak.current,
-        longest_streak: Math.max(streak.longest, profile.longest_streak),
-        last_active_date: streak.todayCounted ? today : profile.last_active_date,
-      });
-    }
-  }, [streak, profile, today, updateProfile]);
-
-  // Разовые бонусы за длину серии.
-  const currentStreak = streak.current;
-  useEffect(() => {
-    if (!profile || currentStreak === 0) return;
-
-    for (const bonus of bonusesForStreak(currentStreak)) {
-      const key = `streak:${bonus.days}`;
-      if (bonusesTried.current.has(key)) continue;
-      bonusesTried.current.add(key);
-      void awardXp(bonus.xp, bonus.reasonKey, key);
-    }
-  }, [currentStreak, profile, awardXp]);
-
-  // Новая недельная разблокировка.
-  useEffect(() => {
-    if (!profile || unlockSynced.current) return;
-    if (weeks.length === 0) return;
-
-    unlockSynced.current = true;
-
-    if (unlockLevel > (profile.unlocked_weeks || 0)) {
-      setNewUnlock(unlockLevel);
-      void updateProfile({ unlocked_weeks: unlockLevel });
-    }
-  }, [unlockLevel, weeks.length, profile, updateProfile]);
 
   const value = useMemo<AppContextValue>(
     () => ({
       user,
       profile,
-      logs,
       today,
       loading,
       error,
-      streak,
-      weeks,
-      unlockLevel,
-      habits,
+      contacts,
+      activity,
+      tasks,
+      logs,
+      todayLog,
+      quota,
+      chain: profile?.chain_days ?? 0,
+      levelInfo,
+      cycleDayNumber,
+      addContact,
+      updateContact,
+      setStatus,
+      deleteContact,
+      addTask,
+      toggleTask,
+      deleteTask,
+      toggleHabit,
+      saveDay,
+      submitModeCheckin,
       updateProfile,
       awardXp,
-      upsertToday,
       reload: load,
       signOut,
     }),
     [
-      user,
-      profile,
-      logs,
-      today,
-      loading,
-      error,
-      streak,
-      weeks,
-      unlockLevel,
-      habits,
-      updateProfile,
-      awardXp,
-      upsertToday,
-      load,
-      signOut,
+      user, profile, today, loading, error, contacts, activity, tasks, logs, todayLog,
+      quota, levelInfo, cycleDayNumber, addContact, updateContact, setStatus, deleteContact,
+      addTask, toggleTask, deleteTask, toggleHabit, saveDay, submitModeCheckin,
+      updateProfile, awardXp, load, signOut,
     ],
   );
 
@@ -436,7 +799,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={() => setError(null)}
-              aria-label="close"
+              aria-label={t.common.close}
               className="-mr-1 -mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white/40 hover:text-white"
             >
               <X size={18} />
@@ -445,9 +808,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
         </div>
       )}
 
-      <FloatingXp event={xpEvent} />
-      <LevelUpOverlay level={levelUp} onDismiss={() => setLevelUp(null)} />
-      <UnlockToast level={newUnlock} onDismiss={() => setNewUnlock(null)} />
+      <Toast toast={toast} />
+
+      <QuotaClosedOverlay
+        open={quotaOverlay.open}
+        xp={quotaOverlay.xp}
+        onContinue={() => setQuotaOverlay({ open: false, xp: 0 })}
+        onStop={() => setQuotaOverlay({ open: false, xp: 0 })}
+      />
+
+      <FirstEventOverlay
+        kind={firstEvent?.kind ?? null}
+        xp={firstEvent?.xp ?? 0}
+        onDismiss={() => setFirstEvent(null)}
+      />
+
+      <LevelUpOverlay
+        level={levelUp?.level ?? null}
+        featureKey={levelUp?.feature ?? null}
+        onDismiss={() => setLevelUp(null)}
+      />
     </AppContext.Provider>
   );
 }
