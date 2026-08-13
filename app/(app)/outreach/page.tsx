@@ -1,117 +1,311 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Search, Send, Sparkles } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Maximize2, Minimize2, Plus, Search } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useApp } from '@/components/AppProvider';
-import { ContactCard } from '@/components/ContactCard';
-import { AddContactSheet, ContactSheet } from '@/components/ContactSheet';
-import { FocusTimer } from '@/components/FocusTimer';
 import { CardTitle, GlassCard } from '@/components/GlassCard';
 import { useLanguage } from '@/components/LanguageProvider';
+import { LockedFeature } from '@/components/LockedFeature';
 import { OfferCard } from '@/components/OfferCard';
 import { OfferSheet, type OfferDraft } from '@/components/OfferSheet';
-import { EmptyState, Fab, FilterChips, FullPageLoader, PageTitle, Spinner } from '@/components/ui';
-import { ProgressBar } from '@/components/XpBar';
-import { useDaily } from '@/hooks/useDaily';
-import { useOutreach } from '@/hooks/useOutreach';
-import { CONTACT_STATUSES, NICHES, type ContactStatus, type Niche, type Offer, type OutreachContact } from '@/lib/types';
-import { featureUnlocked } from '@/lib/unlocks';
-import { onceKey, XP } from '@/lib/xp';
+import { ContactCards } from '@/components/outreach/ContactCards';
+import { ContactSheet, type ContactDraft } from '@/components/outreach/ContactSheet';
+import { ContactTable, type TableSort } from '@/components/outreach/ContactTable';
+import { FunnelChart, type FunnelTarget } from '@/components/outreach/FunnelChart';
+import { PulseBar } from '@/components/PulseBar';
+import { Button, EmptyState, FilterChips, FullPageLoader, PageTitle, Segmented } from '@/components/ui';
+import { useOffers } from '@/hooks/useOffers';
+import {
+  CALL_STATUSES,
+  REPLIED_STATUSES,
+  SENT_STATUSES,
+  type ContactStatus,
+  type Offer,
+  type OutreachContact,
+} from '@/lib/types';
+import { FEATURE_LEVEL, unlocked } from '@/lib/xp';
 
 type Tab = 'contacts' | 'offers';
-type StatusFilter = ContactStatus | 'all';
+type StatusFilter = ContactStatus | 'all' | 'rejected';
+type ViewMode = 'cards' | 'table';
 
 export default function OutreachPage() {
   const { t, tf } = useLanguage();
-  const { profile, loading: appLoading, unlockLevel, awardXp, today } = useApp();
-  const outreach = useOutreach();
-  const daily = useDaily();
+  const app = useApp();
+  const offersApi = useOffers();
 
   const [tab, setTab] = useState<Tab>('contacts');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<StatusFilter>('all');
+  const [view, setView] = useState<ViewMode>('cards');
+  const [fullscreen, setFullscreen] = useState(false);
+  const [sort, setSort] = useState<TableSort | null>(null);
 
-  const [addingContact, setAddingContact] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [openContact, setOpenContact] = useState<OutreachContact | null>(null);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
 
   const [offerSheetOpen, setOfferSheetOpen] = useState(false);
   const [openOffer, setOpenOffer] = useState<Offer | null>(null);
 
-  const goalAwarded = useRef(false);
-
-  const dailyGoal = profile?.daily_goal ?? 10;
-  const goalReached = outreach.sentToday >= dailyGoal;
-
-  // Дневная цель взята: разовый бонус + отметка задачи в чеклисте главной.
-  useEffect(() => {
-    if (!goalReached || goalAwarded.current || outreach.loading) return;
-    goalAwarded.current = true;
-
-    void (async () => {
-      await awardXp(XP.DAILY_GOAL, 'dailyGoal', onceKey.dailyGoal(today));
-      await daily.markTaskDone('outreach');
-    })();
-  }, [goalReached, outreach.loading, awardXp, today, daily]);
+  const level = app.levelInfo.level;
+  const canOffers = unlocked('offers', level);
+  const canNiches = unlocked('niches', level);
+  const canSpeed = unlocked('speed', level);
 
   /* ------------------------------------------------------------------ */
-  /*  Фильтрация                                                         */
-  /* ------------------------------------------------------------------ */
 
-  const visibleContacts = useMemo(() => {
+  const stats = useMemo(() => {
+    const contacts = app.contacts;
+    const sent = contacts.filter((c) => SENT_STATUSES.includes(c.status)).length;
+    const replied = contacts.filter((c) => REPLIED_STATUSES.includes(c.status)).length;
+    const calls = contacts.filter((c) => CALL_STATUSES.includes(c.status)).length;
+    const closed = contacts.filter((c) => c.status === 'closed').length;
+    return { sent, replied, calls, closed };
+  }, [app.contacts]);
+
+  const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return outreach.contacts.filter((contact) => {
-      if (filter !== 'all' && contact.status !== filter) return false;
-      if (needle && !contact.name.toLowerCase().includes(needle)) return false;
+    return app.contacts.filter((c) => {
+      if (filter === 'rejected') {
+        if (c.status !== 'refused') return false;
+      } else if (filter !== 'all' && c.status !== filter) {
+        return false;
+      }
+      if (needle && !c.name.toLowerCase().includes(needle)) return false;
       return true;
     });
-  }, [outreach.contacts, filter, query]);
+  }, [app.contacts, filter, query]);
+
+  /** Разбор по нишам — открывается на 3-м уровне. Ниша свободная, поэтому
+   *  группируем по нормализованному ключу, а показываем исходное написание. */
+  const nicheRows = useMemo(() => {
+    const map = new Map<string, { label: string; sent: number; replied: number }>();
+
+    for (const c of app.contacts) {
+      const label = (c.niche ?? '').trim();
+      if (!label) continue;
+      const key = label.toLowerCase();
+      const row = map.get(key) ?? { label, sent: 0, replied: 0 };
+      if (SENT_STATUSES.includes(c.status)) row.sent += 1;
+      if (REPLIED_STATUSES.includes(c.status)) row.replied += 1;
+      map.set(key, row);
+    }
+
+    return Array.from(map.values())
+      .filter((r) => r.sent > 0)
+      .map((r) => ({ ...r, rate: Math.round((r.replied / r.sent) * 100) }))
+      .sort((a, b) => b.rate - a.rate || b.sent - a.sent);
+  }, [app.contacts]);
 
   const visibleOffers = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return outreach.offers;
-    return outreach.offers.filter(
-      (offer) =>
-        offer.title.toLowerCase().includes(needle) ||
-        offer.content.toLowerCase().includes(needle),
+    if (!needle) return offersApi.offers;
+    return offersApi.offers.filter(
+      (o) => o.title.toLowerCase().includes(needle) || o.content.toLowerCase().includes(needle),
     );
-  }, [outreach.offers, query]);
+  }, [offersApi.offers, query]);
 
-  /** Разбор офферов по нишам: сколько отправлено и какая доля ответов. */
-  const offerAnalytics = useMemo(() => {
-    const rows = NICHES.map((niche) => {
-      const inNiche = outreach.offers.filter((offer) => offer.niche === niche);
-      const sent = inNiche.filter((offer) => offer.result !== 'not_sent');
-      const replied = inNiche.filter((offer) =>
-        ['replied', 'call', 'closed'].includes(offer.result),
-      );
+  if (app.loading || !app.profile) return <FullPageLoader />;
 
-      return {
-        niche: niche as Niche,
-        total: inNiche.length,
-        sent: sent.length,
-        replyRate: sent.length ? Math.round((replied.length / sent.length) * 100) : 0,
-      };
-    }).filter((row) => row.total > 0);
+  /* ------------------------------------------------------------------ */
 
-    return rows.sort((a, b) => b.replyRate - a.replyRate || b.total - a.total);
-  }, [outreach.offers]);
-
-  if (appLoading || !profile) return <FullPageLoader />;
-
-  const showFunnel = featureUnlocked.funnelStats(unlockLevel);
-  const showFocus = featureUnlocked.focusMode(unlockLevel);
-
-  async function handleSaveOffer(draft: OfferDraft, id: string | null) {
-    if (id) await outreach.updateOffer(id, draft);
-    else await outreach.addOffer(draft);
+  async function saveContact(draft: ContactDraft) {
+    if (openContact) {
+      await app.updateContact(openContact.id, {
+        name: draft.name,
+        niche: draft.niche || null,
+        telegram_handle: draft.telegram_handle || null,
+        instagram_url: draft.instagram_url || null,
+        comment: draft.comment || null,
+        next_step: draft.next_step || null,
+        first_contact_date: draft.first_contact_date,
+      });
+      if (draft.status !== openContact.status) {
+        await app.setStatus(openContact, draft.status);
+      }
+    } else {
+      const created = await app.addContact(draft);
+      if (created) {
+        setHighlightId(created.id);
+        setTimeout(() => setHighlightId(null), 1400);
+      }
+    }
+    setSheetOpen(false);
+    setOpenContact(null);
   }
 
+  const funnelHint =
+    stats.replied === 0
+      ? t.outreach.hintNoReplies
+      : stats.replied / Math.max(1, stats.sent) > 0.1
+        ? t.outreach.hintAboveAverage
+        : tf(t.outreach.hintNextReply, { n: Math.round(stats.sent / stats.replied) });
+
+  const body = (
+    <>
+      {/* Быстрый ввод и кнопка новой рассылки — всегда наверху. */}
+      <div className="flex gap-2">
+        <Button
+          full
+          onClick={() => {
+            setOpenContact(null);
+            setSheetOpen(true);
+          }}
+        >
+          <Plus size={18} />
+          {t.outreach.newOutreach}
+        </Button>
+
+        <button
+          type="button"
+          onClick={() => setFullscreen((v) => !v)}
+          aria-label={fullscreen ? t.outreach.exitFullscreen : t.outreach.fullscreen}
+          className="btn-ghost hidden w-14 shrink-0 md:flex"
+        >
+          {fullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+        </button>
+      </div>
+
+      {/* Воронка */}
+      <GlassCard delay={1}>
+        <FunnelChart
+          sent={stats.sent}
+          replied={stats.replied}
+          calls={stats.calls}
+          closed={stats.closed}
+          onLevelClick={(target: FunnelTarget) => setFilter(target as StatusFilter)}
+        />
+        <p className="mt-3 text-center text-sm text-muted">{funnelHint}</p>
+      </GlassCard>
+
+      {/* Квота дня */}
+      <GlassCard delay={2}>
+        <div className="mb-2 flex items-baseline justify-between gap-3">
+          <p className="text-sm font-bold">
+            {t.common.today}{' '}
+            <span className={app.quota.closed ? 'text-success' : 'text-white'}>
+              {app.quota.sent}
+            </span>
+            <span className="text-white/35"> / {app.quota.quota}</span>
+          </p>
+          <span className="text-xs text-white/35">
+            {t.home.record}: {app.quota.record}
+          </span>
+        </div>
+        <PulseBar pct={app.quota.pct} color={app.quota.closed ? '#64FF8C' : '#FFFFFF'} />
+      </GlassCard>
+
+      {/* Поиск */}
+      <label className="relative block">
+        <Search
+          size={17}
+          className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/30"
+        />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t.outreach.searchPh}
+          className="field pl-11"
+        />
+      </label>
+
+      <FilterChips<StatusFilter>
+        value={filter}
+        onChange={setFilter}
+        options={[
+          { value: 'all', label: t.common.all, count: app.contacts.length },
+          { value: 'sent', label: t.statuses.sent },
+          { value: 'replied', label: t.statuses.replied },
+          { value: 'call', label: t.statuses.call },
+          { value: 'closed', label: t.statuses.closed },
+          { value: 'rejected', label: t.outreach.filterIgnored },
+        ]}
+      />
+
+      {/* Переключатель вида */}
+      <Segmented<ViewMode>
+        value={view}
+        onChange={setView}
+        options={[
+          { value: 'cards', label: t.outreach.viewCards },
+          { value: 'table', label: t.outreach.viewTable },
+        ]}
+      />
+
+      {visible.length === 0 ? (
+        <EmptyState text={app.contacts.length === 0 ? t.outreach.empty : t.outreach.emptyFiltered} />
+      ) : view === 'table' ? (
+        <ContactTable
+          contacts={visible}
+          onOpenContact={(c) => {
+            setOpenContact(c);
+            setSheetOpen(true);
+          }}
+          onStatusChange={(c, s) => void app.setStatus(c, s)}
+          onInlineAdd={(draft) => void saveContact(draft)}
+          highlightId={highlightId}
+          showSpeed={canSpeed}
+          showNextStep={canSpeed}
+          sort={sort}
+          onSortChange={setSort}
+        />
+      ) : (
+        <ContactCards
+          contacts={visible}
+          onOpenContact={(c) => {
+            setOpenContact(c);
+            setSheetOpen(true);
+          }}
+          highlightId={highlightId}
+        />
+      )}
+
+      {/* Аналитика по нишам — 3-й уровень */}
+      {canNiches ? (
+        <GlassCard delay={3}>
+          <CardTitle>{t.offers.analytics}</CardTitle>
+          {nicheRows.length === 0 ? (
+            <p className="py-3 text-sm text-muted">{t.offers.analyticsEmpty}</p>
+          ) : (
+            <table className="w-full">
+              <thead>
+                <tr className="text-left text-xs text-white/35">
+                  <th className="pb-2 font-semibold">{t.offers.colNiche}</th>
+                  <th className="pb-2 text-center font-semibold">{t.offers.colSent}</th>
+                  <th className="pb-2 text-center font-semibold">{t.offers.colReplied}</th>
+                  <th className="pb-2 text-right font-semibold">{t.offers.colRate}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {nicheRows.map((row) => (
+                  <tr key={row.label} className="border-t border-divider">
+                    <td className="py-2.5 text-sm">{row.label}</td>
+                    <td className="py-2.5 text-center text-sm text-white/60">{row.sent}</td>
+                    <td className="py-2.5 text-center text-sm text-white/60">{row.replied}</td>
+                    <td className="py-2.5 text-right text-sm font-extrabold">{row.rate}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </GlassCard>
+      ) : (
+        <LockedFeature featureKey="niches" requiredLevel={FEATURE_LEVEL.niches} />
+      )}
+    </>
+  );
+
   return (
-    <div className="space-y-4">
+    <div
+      className={
+        fullscreen ? 'fixed inset-0 z-50 space-y-4 overflow-y-auto bg-ink p-4' : 'space-y-4'
+      }
+    >
       <PageTitle>{t.outreach.title}</PageTitle>
 
-      {/* Вкладки */}
+      {/* Вкладки: библиотека офферов открывается со 2-го уровня. */}
       <div className="flex rounded-2xl bg-white/[0.05] p-1">
         {(
           [
@@ -143,144 +337,22 @@ export default function OutreachPage() {
       </div>
 
       {tab === 'contacts' ? (
+        body
+      ) : canOffers ? (
         <>
-          {/* Статистика воронки */}
-          <div className="grid grid-cols-4 gap-2">
-            {[
-              { value: outreach.stats.sent, label: t.outreach.statSent },
-              { value: outreach.stats.replied, label: t.outreach.statReplied },
-              { value: outreach.stats.calls, label: t.outreach.statCall },
-              { value: outreach.stats.closed, label: t.outreach.statClosed },
-            ].map((cell, i) => (
-              <motion.div
-                key={cell.label}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: i * 0.05 }}
-                className="glass px-2 py-3 text-center"
-              >
-                <p className="text-xl font-extrabold">{cell.value}</p>
-                <p className="mt-0.5 text-[11px] leading-tight text-white/40">{cell.label}</p>
-              </motion.div>
-            ))}
-          </div>
+          <Button
+            full
+            onClick={() => {
+              setOpenOffer(null);
+              setOfferSheetOpen(true);
+            }}
+          >
+            <Plus size={18} />
+            {t.offers.addTitle}
+          </Button>
 
-          {/* Конверсия — разблокировка недели 2 */}
-          {showFunnel && outreach.stats.sent > 0 && (
-            <p className="text-center text-sm text-muted">
-              {outreach.stats.replyRate}% {t.outreach.convReply} · {outreach.stats.callRate}%{' '}
-              {t.outreach.convCall}
-            </p>
-          )}
-
-          {/* Дневная цель */}
-          <GlassCard delay={1}>
-            <div className="mb-2 flex items-baseline justify-between gap-3">
-              <p className="text-sm font-bold">
-                {t.outreach.dailyGoal}{' '}
-                <span className={goalReached ? 'text-success' : 'text-white'}>
-                  {outreach.sentToday}
-                </span>
-                <span className="text-white/35"> / {dailyGoal}</span>
-              </p>
-
-              {goalReached && (
-                <motion.span
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="text-xs font-extrabold text-success"
-                >
-                  +{XP.DAILY_GOAL} XP · {t.outreach.goalReached}
-                </motion.span>
-              )}
-            </div>
-
-            <ProgressBar
-              pct={(outreach.sentToday / dailyGoal) * 100}
-              color={goalReached ? '#64FF8C' : '#FFFFFF'}
-            />
-          </GlassCard>
-
-          {/* Режим фокуса — разблокировка недели 3 */}
-          {showFocus && <FocusTimer today={today} />}
-
-          {/* Поиск */}
-          <label className="relative block">
-            <Search
-              size={17}
-              className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/30"
-            />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t.outreach.searchPh}
-              className="field pl-11"
-            />
-          </label>
-
-          {/* Фильтры статусов */}
-          <FilterChips<StatusFilter>
-            value={filter}
-            onChange={setFilter}
-            options={[
-              { value: 'all', label: t.common.all, count: outreach.contacts.length },
-              ...CONTACT_STATUSES.map((status) => ({
-                value: status as StatusFilter,
-                label: t.statuses[status],
-                count: outreach.statusCounts[status] ?? 0,
-              })),
-            ]}
-          />
-
-          {/* Список */}
-          {outreach.loading ? (
-            <div className="flex justify-center py-10">
-              <Spinner />
-            </div>
-          ) : visibleContacts.length === 0 ? (
-            <EmptyState
-              icon={<Send size={34} />}
-              text={
-                outreach.contacts.length === 0 ? t.outreach.empty : t.outreach.emptyFiltered
-              }
-            />
-          ) : (
-            <div className="space-y-2">
-              {visibleContacts.map((contact, i) => (
-                <ContactCard
-                  key={contact.id}
-                  contact={contact}
-                  index={i}
-                  onOpen={() => setOpenContact(contact)}
-                />
-              ))}
-            </div>
-          )}
-
-          <Fab onClick={() => setAddingContact(true)} label={t.outreach.addTitle} />
-        </>
-      ) : (
-        <>
-          {/* Поиск по офферам */}
-          <label className="relative block">
-            <Search
-              size={17}
-              className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/30"
-            />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t.notes.searchPh}
-              className="field pl-11"
-            />
-          </label>
-
-          {outreach.loading ? (
-            <div className="flex justify-center py-10">
-              <Spinner />
-            </div>
-          ) : visibleOffers.length === 0 ? (
-            <EmptyState icon={<Sparkles size={34} />} text={t.offers.empty} />
+          {visibleOffers.length === 0 ? (
+            <EmptyState text={t.offers.empty} />
           ) : (
             <div className="space-y-2">
               {visibleOffers.map((offer, i) => (
@@ -296,90 +368,46 @@ export default function OutreachPage() {
               ))}
             </div>
           )}
-
-          {/* Аналитика по нишам */}
-          <GlassCard delay={2}>
-            <CardTitle>{t.offers.analytics}</CardTitle>
-
-            {offerAnalytics.length === 0 ? (
-              <p className="py-3 text-sm text-muted">{t.offers.analyticsEmpty}</p>
-            ) : (
-              <table className="w-full">
-                <thead>
-                  <tr className="text-left text-xs text-white/35">
-                    <th className="pb-2 font-semibold">{t.offers.colNiche}</th>
-                    <th className="pb-2 text-center font-semibold">{t.offers.colCount}</th>
-                    <th className="pb-2 text-right font-semibold">{t.offers.colReply}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {offerAnalytics.map((row) => (
-                    <tr key={row.niche} className="border-t border-divider">
-                      <td className="py-2.5 text-sm">{t.niches[row.niche]}</td>
-                      <td className="py-2.5 text-center text-sm text-white/60">
-                        {row.total}
-                        <span className="text-white/25"> · {row.sent} {t.offers.sentCount}</span>
-                      </td>
-                      <td className="py-2.5 text-right text-sm font-extrabold">
-                        {row.replyRate}%
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </GlassCard>
-
-          <Fab
-            onClick={() => {
-              setOpenOffer(null);
-              setOfferSheetOpen(true);
-            }}
-            label={t.offers.addTitle}
-          />
         </>
+      ) : (
+        <LockedFeature featureKey="offers" requiredLevel={FEATURE_LEVEL.offers} />
       )}
-
-      {/* Шторки */}
-      <AddContactSheet
-        open={addingContact}
-        onClose={() => setAddingContact(false)}
-        onSubmit={async (input) => {
-          await outreach.addContact(input);
-        }}
-      />
 
       <ContactSheet
         contact={openContact}
-        onClose={() => setOpenContact(null)}
-        onStatus={async (contact, status) => {
-          await outreach.setStatus(contact, status);
-          setOpenContact((current) =>
-            current && current.id === contact.id ? { ...current, status } : current,
-          );
+        open={sheetOpen}
+        onClose={() => {
+          setSheetOpen(false);
+          setOpenContact(null);
         }}
-        onSaveNote={(id, note) => outreach.updateContact(id, { note })}
-        onDelete={outreach.deleteContact}
+        onSave={saveContact}
+        onDelete={(id) => {
+          void app.deleteContact(id);
+          setSheetOpen(false);
+          setOpenContact(null);
+        }}
+        onSaveToOffers={(contact) =>
+          offersApi.saveFromContact({
+            title: contact.name,
+            niche: contact.niche,
+            content: contact.comment ?? '',
+          })
+        }
+        canSaveToOffers={canOffers}
+        showNextStep={canSpeed}
       />
 
       <OfferSheet
         open={offerSheetOpen}
         offer={openOffer}
-        contacts={outreach.contacts}
+        contacts={app.contacts}
         onClose={() => {
           setOfferSheetOpen(false);
           setOpenOffer(null);
         }}
-        onSave={handleSaveOffer}
-        onDelete={outreach.deleteOffer}
+        onSave={(draft: OfferDraft, id) => offersApi.save(draft, id)}
+        onDelete={offersApi.remove}
       />
-
-      {/* Подсказка про порог разблокировки — видна, пока фишки закрыты */}
-      {!showFunnel && (
-        <p className="pt-2 text-center text-xs text-white/25">
-          {tf(t.unlocks.requirement, { n: 70 })}
-        </p>
-      )}
     </div>
   );
 }

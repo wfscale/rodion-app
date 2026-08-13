@@ -6,9 +6,7 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { useLanguage } from '@/components/LanguageProvider';
 import { Button, Field, Select, TextArea } from '@/components/ui';
 import {
-  NICHES,
   OFFER_RESULTS,
-  type Niche,
   type Offer,
   type OfferResult,
   type OutreachContact,
@@ -42,7 +40,7 @@ async function copyText(text: string): Promise<boolean> {
 
 export type OfferDraft = {
   title: string;
-  niche: Niche;
+  niche: string | null;
   content: string;
   result: OfferResult;
   note: string | null;
@@ -71,7 +69,7 @@ export function OfferSheet({
   const { t } = useLanguage();
 
   const [title, setTitle] = useState('');
-  const [niche, setNiche] = useState<Niche>('psychology');
+  const [niche, setNiche] = useState('');
   const [content, setContent] = useState('');
   const [result, setResult] = useState<OfferResult>('not_sent');
   const [note, setNote] = useState('');
@@ -85,7 +83,7 @@ export function OfferSheet({
     if (!open) return;
 
     setTitle(offer?.title ?? '');
-    setNiche(offer?.niche ?? 'psychology');
+    setNiche(offer?.niche ?? '');
     setContent(offer?.content ?? '');
     setResult(offer?.result ?? 'not_sent');
     setNote(offer?.note ?? '');
@@ -106,7 +104,7 @@ export function OfferSheet({
       await onSave(
         {
           title: title.trim(),
-          niche,
+          niche: niche.trim() || null,
           content: content.trim(),
           result,
           note: note.trim() || null,
@@ -157,11 +155,12 @@ export function OfferSheet({
           options={OFFER_RESULTS.map((r) => ({ value: r, label: t.results[r] }))}
         />
 
-        <Select
-          label={t.outreach.niche}
+        {/* Ниша — свободный текст: select по всему приложению запрещён спецификацией. */}
+        <Field
+          label={t.outreach.fieldNiche}
           value={niche}
-          onChange={(value) => setNiche(value as Niche)}
-          options={NICHES.map((n) => ({ value: n, label: t.niches[n] }))}
+          onChange={(e) => setNiche(e.target.value)}
+          placeholder={t.outreach.quickNiche}
         />
 
         <div>

@@ -20,8 +20,7 @@ function SettingsContent() {
   const params = useSearchParams();
 
   const [username, setUsername] = useState('');
-  const [goal, setGoal] = useState(10);
-  const [threshold, setThreshold] = useState(70);
+  const [deadline, setDeadline] = useState('');
   const [savedFlash, setSavedFlash] = useState(false);
 
   const [integration, setIntegration] = useState<GoogleIntegration | null>(null);
@@ -36,8 +35,7 @@ function SettingsContent() {
   useEffect(() => {
     if (!profile) return;
     setUsername(profile.username ?? '');
-    setGoal(profile.daily_goal ?? 10);
-    setThreshold(profile.streak_threshold ?? 70);
+    setDeadline(profile.deadline_date ?? '');
   }, [profile]);
 
   /* ------------------------------------------------------------------ */
@@ -213,67 +211,75 @@ function SettingsContent() {
         </div>
       </GlassCard>
 
-      {/* ----------------------------- Цели ------------------------------ */}
+      {/* ---------------------------- Ставки ----------------------------- */}
       <GlassCard delay={1}>
         <CardTitle>{t.settings.goals}</CardTitle>
 
         <div className="space-y-5">
-          <div>
-            <Label hint={t.settings.dailyGoalHint}>{t.settings.dailyGoal}</Label>
-            <div className="flex items-center gap-3">
-              <input
-                type="range"
-                min={5}
-                max={50}
-                step={1}
-                value={goal}
-                onChange={(e) => setGoal(Number(e.target.value))}
-                onMouseUp={() => {
-                  void updateProfile({ daily_goal: goal });
+          {/* Дедлайн задаёт счётчик в трезвом режиме — поэтому он редактируемый. */}
+          <label className="block">
+            <Label hint={t.settings.deadlineHint}>{t.settings.deadline}</Label>
+            <input
+              type="date"
+              value={deadline}
+              onChange={(e) => setDeadline(e.target.value)}
+              onBlur={() => {
+                if (deadline && deadline !== profile.deadline_date) {
+                  void updateProfile({ deadline_date: deadline });
                   flashSaved();
-                }}
-                onTouchEnd={() => {
-                  void updateProfile({ daily_goal: goal });
-                  flashSaved();
-                }}
-                className="h-11 flex-1 accent-white"
-              />
-              <span className="w-12 shrink-0 text-right text-xl font-extrabold tabular-nums">
-                {goal}
-              </span>
-            </div>
-          </div>
+                }
+              }}
+              className="field"
+            />
+          </label>
 
+          {/* Квота не задаётся вручную: она растёт от выполнения, иначе теряет смысл. */}
           <div>
-            <Label hint={t.settings.streakThresholdHint}>{t.settings.streakThreshold}</Label>
-            <div className="flex items-center gap-3">
-              <input
-                type="range"
-                min={60}
-                max={90}
-                step={5}
-                value={threshold}
-                onChange={(e) => setThreshold(Number(e.target.value))}
-                onMouseUp={() => {
-                  void updateProfile({ streak_threshold: threshold });
-                  flashSaved();
-                }}
-                onTouchEnd={() => {
-                  void updateProfile({ streak_threshold: threshold });
-                  flashSaved();
-                }}
-                className="h-11 flex-1 accent-white"
-              />
-              <span className="w-12 shrink-0 text-right text-xl font-extrabold tabular-nums">
-                {threshold}%
+            <Label hint={t.settings.quotaInfoHint}>{t.settings.quotaInfo}</Label>
+            <p className="field flex items-center justify-between">
+              <span className="text-xl font-extrabold tabular-nums">
+                {profile.current_quota ?? 5}
               </span>
-            </div>
+              <span className="text-sm text-muted">
+                {t.home.record}: {profile.daily_record ?? 0}
+              </span>
+            </p>
           </div>
         </div>
       </GlassCard>
 
-      {/* -------------------------- Интеграции --------------------------- */}
+      {/* ---------------------------- Отдача ----------------------------- */}
       <GlassCard delay={2}>
+        <CardTitle>{t.settings.feedback}</CardTitle>
+
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-base font-bold">{t.settings.sounds}</p>
+            <p className="mt-0.5 text-sm text-muted">{t.settings.soundsHint}</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={Boolean(profile.sound_enabled)}
+            onClick={() => {
+              void updateProfile({ sound_enabled: !profile.sound_enabled });
+              flashSaved();
+            }}
+            className={`relative h-8 w-14 shrink-0 rounded-full transition-colors ${
+              profile.sound_enabled ? 'bg-white' : 'bg-white/15'
+            }`}
+          >
+            <span
+              className={`absolute top-1 h-6 w-6 rounded-full transition-all ${
+                profile.sound_enabled ? 'left-7 bg-ink' : 'left-1 bg-white/60'
+              }`}
+            />
+          </button>
+        </div>
+      </GlassCard>
+
+      {/* -------------------------- Интеграции --------------------------- */}
+      <GlassCard delay={3}>
         <CardTitle>{t.settings.integrations}</CardTitle>
 
         <div className="space-y-4">
@@ -347,7 +353,7 @@ function SettingsContent() {
       </GlassCard>
 
       {/* ----------------------------- Язык ------------------------------ */}
-      <GlassCard delay={3}>
+      <GlassCard delay={4}>
         <CardTitle>{t.settings.language}</CardTitle>
 
         <Segmented<Language>
@@ -365,7 +371,7 @@ function SettingsContent() {
       </GlassCard>
 
       {/* ----------------------------- Данные ---------------------------- */}
-      <GlassCard delay={4}>
+      <GlassCard delay={5}>
         <CardTitle>{t.settings.data}</CardTitle>
 
         <div className="space-y-3">

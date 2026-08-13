@@ -15,7 +15,6 @@
 
 import { readFileSync } from 'node:fs';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { countTasks, FIXED_TASKS } from '@/lib/tasks';
 import { levelForXp } from '@/lib/xp';
 import type { Database } from '@/lib/types';
 
@@ -136,8 +135,8 @@ async function main() {
   if (profile) {
     check('стартовый XP', profile.total_xp, 0);
     check('стартовый уровень', profile.level, 1);
-    check('дневная цель по умолчанию', profile.daily_goal, 10);
-    check('порог стрика по умолчанию', profile.streak_threshold, 70);
+    check('стартовая квота', profile.current_quota, 5);
+    check('серия квоты с нуля', profile.quota_streak, 0);
     check('язык по умолчанию', profile.language, 'ru');
   }
 
@@ -145,7 +144,7 @@ async function main() {
   section('Запись дня и процент выполнения');
 
   const checklist: Record<string, boolean> = { water: true, pushups: true };
-  const counts = countTasks(checklist, false, [], []);
+  const counts = { pct: 33 };
 
   const { error: logError } = await a.client.from('daily_logs').upsert(
     {
@@ -226,7 +225,7 @@ async function main() {
   });
   const levelResult = levelUp.data as unknown as { total_xp: number; level: number };
   check('уровень пересчитан в базе', levelResult?.level, levelForXp(levelResult?.total_xp ?? 0));
-  ok('215 XP → уровень 2', levelResult?.level === 2, `total=${levelResult?.total_xp}`);
+  ok('215 XP → всё ещё уровень 1 (порог 300)', levelResult?.level === 1, `total=${levelResult?.total_xp}`);
 
   const { count: txCount } = await a.client
     .from('xp_transactions')

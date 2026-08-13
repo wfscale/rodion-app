@@ -1,40 +1,43 @@
 import type { Dict } from '@/lib/i18n';
 
 // ---------------------------------------------------------------------------
-// Стоимость действий в XP
+// Стоимость действий в XP.
+//
+// Соотношение намеренно перекошено в сторону рассылок: одна рассылка стоит
+// 8 XP, одна привычка — 1 XP. Закрыть весь блок привычек = 6 XP, меньше
+// одной рассылки. Приложение должно вознаграждать то, что меняет жизнь.
 // ---------------------------------------------------------------------------
 export const XP = {
-  TASK: 10,
-  OUTREACH_SENT: 15,
-  REPLIED: 30,
-  CALL: 75,
-  CLOSED: 200,
-  CHECKIN: 20,
-  FULL_DAY: 50,
-  FASTING: 10,
-  DAILY_GOAL: 50,
-  STREAK_3: 30,
-  STREAK_7: 100,
-  STREAK_14: 250,
+  OUTREACH_SENT: 8,
+  REPLIED: 80,
+  CALL: 250,
+  CLOSED: 1000,
+  QUOTA_DONE: 100,
+  DAILY_RECORD: 200,
+  /** Каждые 5 рассылок сверх квоты. Потолка нет. */
+  BONUS_OVER_QUOTA: 50,
+
+  MODE_KEPT: 8,
+  CHECKIN: 3,
+  HABIT: 1,
 } as const;
 
 // ---------------------------------------------------------------------------
-// Уровни. Порог — минимальный XP для входа в уровень.
-// Названия берутся из словаря (t.levels), индекс = level - 1.
+// Уровни. Пользователь никогда не видит полный список — только текущий
+// и тизер следующего, поэтому названия и пороги живут только здесь.
 // ---------------------------------------------------------------------------
-export const LEVEL_THRESHOLDS = [0, 200, 500, 1000, 2000, 4000, 8000] as const;
-export const MAX_LEVEL = LEVEL_THRESHOLDS.length;
+export const LEVEL_THRESHOLDS = [
+  0, 300, 800, 1800, 3500, 6500, 12000, 22000, 40000,
+] as const;
+
+export const MAX_LEVEL = LEVEL_THRESHOLDS.length; // 9
 
 export type LevelInfo = {
   level: number;
   name: string;
-  /** XP, с которого начинается текущий уровень */
   floor: number;
-  /** XP, с которого начнётся следующий (null на максимальном) */
   ceiling: number | null;
-  /** Прогресс внутри уровня, 0..100 */
   progressPct: number;
-  /** Сколько XP осталось до следующего уровня (0 на максимальном) */
   xpToNext: number;
   isMax: boolean;
 };
@@ -49,7 +52,6 @@ export function levelForXp(totalXp: number): number {
   return level;
 }
 
-/** Полная информация об уровне для хедера, профиля и прогресс-бара. */
 export function getLevelInfo(totalXp: number, t: Dict): LevelInfo {
   const xp = Math.max(0, totalXp || 0);
   const level = levelForXp(xp);
@@ -72,16 +74,56 @@ export function getLevelInfo(totalXp: number, t: Dict): LevelInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Что открывает каждый уровень.
+//
+// Тизер показывается только для следующего уровня и только до 7-го:
+// уровни 8 и 9 открываются без предупреждения.
+// ---------------------------------------------------------------------------
+export type FeatureKey =
+  | 'offers'      // уровень 2 — библиотека офферов
+  | 'niches'      // уровень 3 — аналитика по нишам
+  | 'speed'       // уровень 4 — счётчик скорости + «следующий шаг»
+  | 'project'     // уровень 5 — раздел «Проект»
+  | 'report'      // уровень 6 — еженедельный отчёт
+  | 'scale';      // уровень 7 — дашборд масштаба
+
+export const FEATURE_LEVEL: Record<FeatureKey, number> = {
+  offers: 2,
+  niches: 3,
+  speed: 4,
+  project: 5,
+  report: 6,
+  scale: 7,
+};
+
+/** Открыта ли фича на текущем уровне. */
+export function unlocked(feature: FeatureKey, level: number): boolean {
+  return level >= FEATURE_LEVEL[feature];
+}
+
+/** Ключ фичи, которая откроется на данном уровне (для анимации повышения). */
+export function featureAtLevel(level: number): FeatureKey | null {
+  const entry = (Object.keys(FEATURE_LEVEL) as FeatureKey[]).find(
+    (key) => FEATURE_LEVEL[key] === level,
+  );
+  return entry ?? null;
+}
+
+/** Тизер следующего уровня. null — если дальше тайна (уровни 8 и 9). */
+export function nextLevelTeaser(currentLevel: number): FeatureKey | null {
+  return featureAtLevel(currentLevel + 1);
+}
+
+// ---------------------------------------------------------------------------
 // Ключи идемпотентности для award_xp.
-// Один и тот же ключ = XP начислится ровно один раз за всё время.
-// Благодаря этому нельзя фармить опыт, снимая и заново ставя галочку.
+// Один ключ = одно начисление за всё время.
 // ---------------------------------------------------------------------------
 export const onceKey = {
-  task: (date: string, taskId: string) => `task:${date}:${taskId}`,
+  habit: (date: string, habitId: string) => `habit:${date}:${habitId}`,
   checkin: (date: string) => `checkin:${date}`,
-  fullDay: (date: string) => `fullday:${date}`,
-  fasting: (date: string) => `fasting:${date}`,
-  dailyGoal: (date: string) => `dailygoal:${date}`,
-  streak: (days: number) => `streak:${days}`,
+  modeKept: (date: string) => `mode:${date}`,
+  quota: (date: string) => `quota:${date}`,
+  record: (date: string, count: number) => `record:${date}:${count}`,
+  bonus: (date: string, step: number) => `bonus:${date}:${step}`,
   contactStatus: (contactId: string, status: string) => `contact:${contactId}:${status}`,
 };
