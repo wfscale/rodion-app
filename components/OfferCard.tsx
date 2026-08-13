@@ -2,16 +2,11 @@
 
 import { motion } from 'framer-motion';
 import { useLanguage } from '@/components/LanguageProvider';
+import { statusTone } from '@/components/outreach/ContactSheet';
 import { Badge } from '@/components/ui';
 import { formatDateTime } from '@/lib/date';
-import type { Offer, OfferResult } from '@/lib/types';
+import type { Offer } from '@/lib/types';
 
-export function resultTone(result: OfferResult): 'neutral' | 'success' | 'warn' | 'danger' {
-  if (result === 'closed') return 'success';
-  if (result === 'call' || result === 'replied') return 'warn';
-  if (result === 'ignored') return 'danger';
-  return 'neutral';
-}
 
 export function OfferCard({
   offer,
@@ -42,7 +37,7 @@ export function OfferCard({
           )}
         </div>
 
-        <Badge tone={resultTone(offer.result)}>{t.results[offer.result]}</Badge>
+        <Badge tone={statusTone(offer.result)}>{t.statuses[offer.result]}</Badge>
       </div>
 
       <p className="mt-2 line-clamp-2 text-sm leading-snug text-white/45">

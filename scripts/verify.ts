@@ -24,6 +24,7 @@ import {
 import { modeStageKey, isModeActive, applyCheckin, daysUntilDeadline } from '@/lib/mode';
 import { onOutreachAdded, onStatusChanged, totalXp, hasOverlay } from '@/lib/gamification';
 import { followUpState, needsTouch, intervalFor, compareUrgency, SILENT_STEPS } from '@/lib/followup';
+import { OFFER_RESULTS, CONTACT_STATUSES, SENT_STATUSES, REPLIED_STATUSES } from '@/lib/types';
 import { getLogicalDate, weekDates, daysBetween } from '@/lib/date';
 import { ru } from '@/lib/i18n/ru';
 import { en } from '@/lib/i18n/en';
@@ -341,55 +342,62 @@ section('Напоминания о касаниях');
 const fu = (over: Partial<Parameters<typeof followUpState>[0]> = {}) =>
   followUpState({ status: 'sent', lastTouchAt: '2026-08-13', touchCount: 1, muted: false, today: '2026-08-13', ...over });
 
-check('каскад молчунов', [...SILENT_STEPS], [2, 5, 10, 21]);
-check('первое напоминание через 2 дня', intervalFor('sent', 1), 2);
-check('второе — через 5', intervalFor('sent', 2), 5);
-check('третье — через 10', intervalFor('sent', 3), 10);
-check('четвёртое — через 21', intervalFor('sent', 4), 21);
-check('после четвёртого каскад кончился', intervalFor('sent', 5), null);
+check('каскад молчунов', [...SILENT_STEPS], [1, 3, 7, 15, 30]);
+check('первое напоминание через день', intervalFor('sent', 1), 1);
+check('второе — через 3', intervalFor('sent', 2), 3);
+check('третье — через 7', intervalFor('sent', 3), 7);
+check('четвёртое — через 15', intervalFor('sent', 4), 15);
+check('пятое — через 30', intervalFor('sent', 5), 30);
+check('после пятого каскад кончился', intervalFor('sent', 6), null);
 check('ответившему напоминаем через 3 дня', intervalFor('replied', 1), 3);
 check('перед созвоном — за день', intervalFor('call', 1), 1);
 check('отказ не напоминаем', intervalFor('refused', 1), null);
 check('«ответил — отказ» не напоминаем', intervalFor('replied_no', 1), null);
+check('заблокировавшего не напоминаем', intervalFor('blocked', 1), null);
 check('закрытого не напоминаем', intervalFor('closed', 1), null);
 check('не отправленного не напоминаем', intervalFor('not_sent', 1), null);
 
-check('в день отправки — рано', fu().urgency, 'none');
-check('через день — скоро', fu({ today: '2026-08-14' }).urgency, 'soon');
-check('через два дня — пора', fu({ today: '2026-08-15' }).urgency, 'due');
-check('через четыре — просрочено', fu({ today: '2026-08-17' }).urgency, 'overdue');
-check('просрочка считается верно', fu({ today: '2026-08-17' }).daysUntil, -2);
+check('в день отправки — уже завтра', fu().urgency, 'soon');
+check('на следующий день — пора', fu({ today: '2026-08-14' }).urgency, 'due');
+check('через три дня — просрочено', fu({ today: '2026-08-16' }).urgency, 'overdue');
+check('просрочка считается верно', fu({ today: '2026-08-16' }).daysUntil, -2);
 
 check(
-  'после второго касания ждём дольше',
+  'второе касание созревает на третий день',
   fu({ touchCount: 2, lastTouchAt: '2026-08-13', today: '2026-08-16' }).urgency,
+  'due',
+);
+check(
+  'третье касание ждёт неделю',
+  fu({ touchCount: 3, lastTouchAt: '2026-08-13', today: '2026-08-18' }).urgency,
   'none',
 );
 check(
-  'второе касание созревает на пятый день',
-  fu({ touchCount: 2, lastTouchAt: '2026-08-13', today: '2026-08-18' }).urgency,
+  'третье касание созревает на седьмой день',
+  fu({ touchCount: 3, lastTouchAt: '2026-08-13', today: '2026-08-20' }).urgency,
   'due',
 );
 
 check(
   'исчерпанный каскад помечает остывшего',
-  fu({ touchCount: 5, today: '2026-09-30' }).urgency,
+  fu({ touchCount: 6, today: '2026-11-30' }).urgency,
   'cold',
 );
 check('заглушённый контакт молчит', fu({ muted: true, today: '2026-08-20' }).urgency, 'none');
-check(
-  'ответивший напоминает через 3 дня простоя',
-  fu({ status: 'replied', touchCount: 1, today: '2026-08-16' }).urgency,
-  'due',
-);
 
 check('пора касаться — просрочено', needsTouch(fu({ today: '2026-08-17' })), true);
-check('пора касаться — сегодня', needsTouch(fu({ today: '2026-08-15' })), true);
-check('не пора — рано', needsTouch(fu({ today: '2026-08-14' })), false);
+check('пора касаться — сегодня', needsTouch(fu({ today: '2026-08-14' })), true);
+check('не пора — ещё рано', needsTouch(fu({ touchCount: 3, today: '2026-08-15' })), false);
 
 const overdue = fu({ today: '2026-08-20' });
-const due = fu({ today: '2026-08-15' });
+const due = fu({ today: '2026-08-14' });
 check('просроченные идут первыми', compareUrgency(overdue, due) < 0, true);
+
+section('Результат оффера зеркалит статус рассылки');
+check('шкалы совпадают один в один', [...OFFER_RESULTS], [...CONTACT_STATUSES]);
+check('заблокировал есть в статусах', CONTACT_STATUSES.includes('blocked'), true);
+check('заблокировал считается дошедшей рассылкой', SENT_STATUSES.includes('blocked'), true);
+check('заблокировал НЕ считается ответом', REPLIED_STATUSES.includes('blocked'), false);
 
 /* -------------------------------------------------------------------------- */
 section('Полнота словарей');

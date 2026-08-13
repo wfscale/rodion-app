@@ -4,7 +4,7 @@ import { Check, Copy, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { BottomSheet } from '@/components/BottomSheet';
 import { useLanguage } from '@/components/LanguageProvider';
-import { Button, Field, Select, TextArea } from '@/components/ui';
+import { Button, Field, Label, Select, TextArea } from '@/components/ui';
 import {
   OFFER_RESULTS,
   type Offer,
@@ -148,12 +148,21 @@ export function OfferSheet({
           error={error ?? undefined}
         />
 
-        <Select
-          label={t.offers.result}
-          value={result}
-          onChange={(value) => setResult(value as OfferResult)}
-          options={OFFER_RESULTS.map((r) => ({ value: r, label: t.results[r] }))}
-        />
+        {/* У оффера, привязанного к рассылке, результат не выбирается руками:
+            он и есть статус контакта. Иначе два источника правды разъедутся. */}
+        {offer?.contact_id ? (
+          <div>
+            <Label hint={t.offers.resultAuto}>{t.offers.result}</Label>
+            <p className="field flex items-center text-white/70">{t.statuses[result]}</p>
+          </div>
+        ) : (
+          <Select
+            label={t.offers.result}
+            value={result}
+            onChange={(value) => setResult(value as OfferResult)}
+            options={OFFER_RESULTS.map((r) => ({ value: r, label: t.statuses[r] }))}
+          />
+        )}
 
         {/* Ниша — свободный текст: select по всему приложению запрещён спецификацией. */}
         <Field

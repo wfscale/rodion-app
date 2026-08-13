@@ -16,6 +16,7 @@ export const CONTACT_STATUSES = [
   'replied',
   'replied_no',
   'refused',
+  'blocked',
   'call',
   'closed',
 ] as const;
@@ -32,19 +33,17 @@ export const SENT_STATUSES: ContactStatus[] = [
   'replied',
   'replied_no',
   'refused',
+  'blocked',
   'call',
   'closed',
 ];
 
-export const OFFER_RESULTS = [
-  'not_sent',
-  'ignored',
-  'read',
-  'replied',
-  'call',
-  'closed',
-] as const;
-export type OfferResult = (typeof OFFER_RESULTS)[number];
+/**
+ * Результат оффера — это и есть статус контакта, которому его отправили.
+ * Отдельная шкала означала бы таблицу соответствий и неизбежный разъезд.
+ */
+export const OFFER_RESULTS = CONTACT_STATUSES;
+export type OfferResult = ContactStatus;
 
 export const NOTE_TAGS = ['idea', 'goal', 'insight', 'thought'] as const;
 export type NoteTag = (typeof NOTE_TAGS)[number];

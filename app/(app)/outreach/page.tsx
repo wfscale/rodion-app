@@ -312,8 +312,12 @@ export default function OutreachPage() {
 
   return (
     <div
+      /* В полноэкранном режиме контент всё равно держим в рамках: таблица
+         на всю ширину монитора читается хуже, глаз теряет строку. */
       className={
-        fullscreen ? 'fixed inset-0 z-50 space-y-4 overflow-y-auto bg-ink p-4' : 'space-y-4'
+        fullscreen
+          ? 'fixed inset-0 z-50 mx-auto max-w-6xl space-y-4 overflow-y-auto bg-ink px-6 py-6'
+          : 'space-y-4'
       }
     >
       <PageTitle>{t.outreach.title}</PageTitle>

@@ -211,7 +211,7 @@ export const en: Dict = {
     cold: 'cold',
     silentDays: 'silent for {n}',
     touchNumber: 'touch {n}',
-    hint: 'Intervals grow: 2 → 5 → 10 → 21 days. After that the lead is considered cold.',
+    hint: 'Intervals grow: 1 → 3 → 7 → 15 → 30 days. After that the lead is considered cold.',
   },
 
   statuses: {
@@ -221,6 +221,7 @@ export const en: Dict = {
     replied: 'Replied',
     replied_no: 'Replied — no',
     refused: 'Refused',
+    blocked: 'Blocked',
     call: 'Call',
     closed: 'Closed',
   },
@@ -234,6 +235,7 @@ export const en: Dict = {
     content: 'Offer text',
     contentPh: 'Personal observation → problem → proposal…',
     result: 'Result',
+    resultAuto: 'mirrors the outreach status',
     note: 'What worked / what did not',
     notePh: 'Debrief: why they replied or why they did not…',
     linkContact: 'Link to contact',
@@ -248,14 +250,6 @@ export const en: Dict = {
     colRate: '% conversion',
   },
 
-  results: {
-    not_sent: 'Not sent',
-    ignored: 'Ignored',
-    read: 'Read',
-    replied: 'Replied',
-    call: 'Call',
-    closed: 'Closed',
-  },
 
   tags: {
     idea: 'Idea',

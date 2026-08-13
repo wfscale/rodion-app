@@ -512,7 +512,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           title: `${label} · ${formatDayMonth(draft.first_contact_date, 'ru')}`,
           niche: draft.niche || null,
           content: draft.comment.trim(),
-          result: draft.status === 'not_sent' ? 'not_sent' : 'not_sent',
+          result: draft.status,
         } as never);
       }
 

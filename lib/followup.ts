@@ -12,8 +12,8 @@ import type { ContactStatus } from '@/lib/types';
  * настойчивость, а не как навязчивость.
  */
 
-/** Шаги каскада для тех, кто молчит: 2 → 5 → 10 → 21 день. */
-export const SILENT_STEPS = [2, 5, 10, 21] as const;
+/** Шаги каскада для тех, кто молчит: 1 → 3 → 7 → 15 → 30 дней. */
+export const SILENT_STEPS = [1, 3, 7, 15, 30] as const;
 
 /** Диалог начался, но замер — напомнить через столько дней. */
 export const REPLIED_IDLE_DAYS = 3;
@@ -34,7 +34,8 @@ export type FollowUpState = {
 };
 
 /** Статусы, по которым напоминания не нужны вовсе. */
-const SILENT_IGNORED: ContactStatus[] = ['not_sent', 'refused', 'replied_no', 'closed'];
+// Заблокировавшему писать некуда — это худший исход и конец истории.
+const SILENT_IGNORED: ContactStatus[] = ['not_sent', 'refused', 'replied_no', 'blocked', 'closed'];
 
 /**
  * Через сколько дней после последнего касания пора писать снова.
