@@ -196,26 +196,20 @@ export default function ProgressPage() {
 
       {/* Еженедельный отчёт — 6-й уровень */}
       {unlocked('report', level) ? (
-        <GlassCard delay={3}>
-          <CardTitle>{t.report.title}</CardTitle>
-          <WeeklyReportView reports={reports} />
-        </GlassCard>
+        <WeeklyReportView reports={reports} />
       ) : (
         <LockedFeature featureKey="report" requiredLevel={FEATURE_LEVEL.report} />
       )}
 
       {/* Дашборд масштаба — 7-й уровень */}
       {unlocked('scale', level) ? (
-        <GlassCard delay={4}>
-          <CardTitle>{t.scale.title}</CardTitle>
-          <ScaleDashboard
-            sentTotal={app.contacts.length}
-            closedTotal={closedTotal}
-            daysActive={daysActive}
-            avgDeal={profile.avg_deal_amount ?? 0}
-            onAvgDealChange={(value) => void app.updateProfile({ avg_deal_amount: value })}
-          />
-        </GlassCard>
+        <ScaleDashboard
+          sentTotal={app.contacts.length}
+          closedTotal={closedTotal}
+          daysActive={daysActive}
+          avgDeal={profile.avg_deal_amount ?? 0}
+          onAvgDealChange={(value) => void app.updateProfile({ avg_deal_amount: value })}
+        />
       ) : (
         <LockedFeature featureKey="scale" requiredLevel={FEATURE_LEVEL.scale} />
       )}

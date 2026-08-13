@@ -329,7 +329,7 @@ export function ContactTable({
           <button
             type="button"
             onClick={() => toggleSort(column.sort as SortKey)}
-            className="flex w-full items-center gap-1 text-left text-xs font-bold uppercase tracking-wide text-white/45 transition-colors hover:text-white"
+            className="flex min-h-[44px] w-full items-center gap-1 py-2 text-left text-xs font-bold uppercase tracking-wide text-white/45 transition-colors hover:text-white"
           >
             <span className="truncate">{column.label}</span>
             {active &&

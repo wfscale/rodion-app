@@ -84,19 +84,16 @@ export default function HomePage() {
 
       <QuickAddOutreach today={app.today} onAdd={handleQuickAdd} busy={adding} />
 
-      <GlassCard delay={1}>
-        <CardTitle>{t.home.feedTitle}</CardTitle>
-        <ActivityFeed entries={app.activity} />
-      </GlassCard>
+      {/* Компонент рисует свою карточку сам: вложенный backdrop-filter
+          в Safari на iOS схлопывается в непрозрачный белый прямоугольник. */}
+      <ActivityFeed entries={app.activity} />
 
-      <GlassCard delay={2}>
-        <DailyTasks
-          tasks={app.tasks}
-          onAdd={(text) => void app.addTask(text)}
-          onToggle={(id) => void app.toggleTask(id)}
-          onDelete={(id) => void app.deleteTask(id)}
-        />
-      </GlassCard>
+      <DailyTasks
+        tasks={app.tasks}
+        onAdd={(text) => void app.addTask(text)}
+        onToggle={(id) => void app.toggleTask(id)}
+        onDelete={(id) => void app.deleteTask(id)}
+      />
 
       {/* Трезвый режим — экстренная кнопка, должна быть под рукой. */}
       <Button variant="ghost" full onClick={() => setSober(true)}>
@@ -113,12 +110,12 @@ export default function HomePage() {
         }}
       />
 
-      <GlassCard delay={4}>
-        <HabitsBlock
-          done={app.todayLog?.checklist ?? {}}
-          onToggle={(id) => void app.toggleHabit(id)}
-        />
+      <HabitsBlock
+        done={app.todayLog?.checklist ?? {}}
+        onToggle={(id) => void app.toggleHabit(id)}
+      />
 
+      <GlassCard delay={4}>
         <NutritionBlock
           log={app.todayLog ?? ({ date: app.today } as never)}
           onSaveMeals={(input) => app.saveDay(input)}

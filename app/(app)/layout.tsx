@@ -13,7 +13,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       {/* Сайдбар на десктопе фиксирован — контент отодвигается на его ширину. */}
       <main className="md:pl-[240px]">
-        <div className="pb-content mx-auto w-full max-w-lg px-4 pt-[calc(16px+env(safe-area-inset-top))] md:max-w-4xl md:px-8 md:pb-16 md:pt-10">
+        <div className="pb-content mx-auto w-full max-w-lg px-4 pt-[calc(16px+env(safe-area-inset-top))] md:max-w-5xl md:px-6 md:pb-16 md:pt-10">
           {children}
         </div>
       </main>

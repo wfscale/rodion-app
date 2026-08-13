@@ -32,7 +32,7 @@ type StatusFilter = ContactStatus | 'all' | 'rejected';
 type ViewMode = 'cards' | 'table';
 
 export default function OutreachPage() {
-  const { t, tf } = useLanguage();
+  const { t } = useLanguage();
   const app = useApp();
   const offersApi = useOffers();
 
@@ -137,13 +137,6 @@ export default function OutreachPage() {
     setOpenContact(null);
   }
 
-  const funnelHint =
-    stats.replied === 0
-      ? t.outreach.hintNoReplies
-      : stats.replied / Math.max(1, stats.sent) > 0.1
-        ? t.outreach.hintAboveAverage
-        : tf(t.outreach.hintNextReply, { n: Math.round(stats.sent / stats.replied) });
-
   const body = (
     <>
       {/* Быстрый ввод и кнопка новой рассылки — всегда наверху. */}
@@ -170,16 +163,13 @@ export default function OutreachPage() {
       </div>
 
       {/* Воронка */}
-      <GlassCard delay={1}>
-        <FunnelChart
-          sent={stats.sent}
-          replied={stats.replied}
-          calls={stats.calls}
-          closed={stats.closed}
-          onLevelClick={(target: FunnelTarget) => setFilter(target as StatusFilter)}
-        />
-        <p className="mt-3 text-center text-sm text-muted">{funnelHint}</p>
-      </GlassCard>
+      <FunnelChart
+        sent={stats.sent}
+        replied={stats.replied}
+        calls={stats.calls}
+        closed={stats.closed}
+        onLevelClick={(target: FunnelTarget) => setFilter(target as StatusFilter)}
+      />
 
       {/* Кому написать сегодня — рабочий список, выше таблицы */}
       <FollowUpList
