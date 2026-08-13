@@ -12,6 +12,26 @@ import type { DailyLog, Offer, OutreachContact } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
+/** Человекочитаемые статусы: в таблице их читает человек, а не машина. */
+const STATUS_LABELS: Record<string, string> = {
+  not_sent: 'Не отправлено',
+  sent: 'Отправлено',
+  read: 'Прочитал',
+  replied: 'Ответил',
+  replied_no: 'Ответил — отказ',
+  refused: 'Отказ',
+  blocked: 'Заблокировал',
+  call: 'Созвон',
+  closed: 'Закрыт',
+};
+
+/** Дней с касания на момент выгрузки. */
+function daysSince(iso: string | null, today: string): number {
+  if (!iso) return 0;
+  const ms = new Date(`${today}T00:00:00Z`).getTime() - new Date(`${iso}T00:00:00Z`).getTime();
+  return Math.max(0, Math.round(ms / 86_400_000));
+}
+
 /** Переносим данные пользователя в три листа таблицы. */
 export async function POST() {
   const supabase = createClient();
@@ -73,6 +93,7 @@ export async function POST() {
     supabase.from('offers').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
   ]);
 
+  const today = new Date().toISOString().slice(0, 10);
   const logs = (logsRes.data as DailyLog[]) ?? [];
   const contacts = (contactsRes.data as OutreachContact[]) ?? [];
   const offers = (offersRes.data as Offer[]) ?? [];
@@ -114,17 +135,32 @@ export async function POST() {
     {
       title: 'Рассылки',
       rows: [
-        ['Имя', 'Ниша', 'Аудитория', 'Платформа', 'Статус', 'Создан', 'Обновлён', 'Заметка'],
-        ...contacts.map((contact) => [
-          contact.name,
-          contact.niche ?? '',
-          contact.audience_size ?? '',
-          contact.platform ?? '',
-          contact.status,
-          contact.created_at.slice(0, 10),
-          (contact.updated_at ?? contact.created_at).slice(0, 10),
-          contact.note ?? '',
-        ]),
+        [
+          '№',
+          'Статус',
+          'Имя',
+          'Telegram',
+          'Ссылка Instagram',
+          'Ниша',
+          'Дата касания',
+          'Дней с касания',
+          'Оффер / Комментарий',
+        ],
+        // Нумерация по порядку добавления, поэтому идём от старых к новым.
+        ...[...contacts]
+          .sort((a, b) => a.created_at.localeCompare(b.created_at))
+          .map((contact, index) => [
+            index + 1,
+            STATUS_LABELS[contact.status] ?? contact.status,
+            contact.name,
+            contact.telegram_handle ? `@${contact.telegram_handle}` : '',
+            contact.instagram_url ?? '',
+            contact.niche ?? '',
+            contact.first_contact_date ?? '',
+            // Пересчитывается при каждой синхронизации, а не хранится.
+            daysSince(contact.last_touch_at ?? contact.first_contact_date, today),
+            contact.comment ?? '',
+          ]),
       ],
     },
     {

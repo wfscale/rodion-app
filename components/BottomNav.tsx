@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { BarChart2, FileText, Home, Send, Settings } from 'lucide-react';
+import { BarChart2, FileText, Home, Rocket, Send, Settings } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useLanguage } from '@/components/LanguageProvider';
@@ -13,6 +13,10 @@ const ITEMS = [
   { href: '/notes', icon: FileText, key: 'notes' },
   { href: '/settings', icon: Settings, key: 'settings' },
 ] as const;
+
+/* «Проект» живёт только в сайдбаре: шестая иконка внизу на 375px
+   съедает подписи, а раздел всё равно открывается лишь на 5-м уровне. */
+const DESKTOP_ONLY = [{ href: '/project', icon: Rocket, key: 'project' }] as const;
 
 function isActive(pathname: string, href: string) {
   return href === '/' ? pathname === '/' : pathname.startsWith(href);
@@ -76,7 +80,7 @@ export function Sidebar() {
       </div>
 
       <ul className="space-y-1">
-        {ITEMS.map(({ href, icon: Icon, key }) => {
+        {[...ITEMS, ...DESKTOP_ONLY].map(({ href, icon: Icon, key }) => {
           const active = isActive(pathname, href);
           return (
             <li key={href}>

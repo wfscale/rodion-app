@@ -25,6 +25,8 @@ import { modeStageKey, isModeActive, applyCheckin, daysUntilDeadline } from '@/l
 import { onOutreachAdded, onStatusChanged, totalXp, hasOverlay } from '@/lib/gamification';
 import { followUpState, needsTouch, intervalFor, compareUrgency, SILENT_STEPS } from '@/lib/followup';
 import { OFFER_RESULTS, CONTACT_STATUSES, SENT_STATUSES, REPLIED_STATUSES } from '@/lib/types';
+import type { OutreachContact } from '@/lib/types';
+import { statsForWeek, missingWeeks } from '@/lib/reports';
 import { getLogicalDate, weekDates, daysBetween } from '@/lib/date';
 import { ru } from '@/lib/i18n/ru';
 import { en } from '@/lib/i18n/en';
@@ -398,6 +400,82 @@ check('шкалы совпадают один в один', [...OFFER_RESULTS], 
 check('заблокировал есть в статусах', CONTACT_STATUSES.includes('blocked'), true);
 check('заблокировал считается дошедшей рассылкой', SENT_STATUSES.includes('blocked'), true);
 check('заблокировал НЕ считается ответом', REPLIED_STATUSES.includes('blocked'), false);
+
+
+/* -------------------------------------------------------------------------- */
+section('Недельные отчёты');
+
+const mk = (over: Partial<OutreachContact>): OutreachContact =>
+  ({
+    id: 'x', user_id: 'u', name: 'n', niche: null, audience_size: null, platform: null,
+    status: 'sent', note: null, status_history: [], telegram_handle: null,
+    instagram_url: null, first_contact_date: '2026-08-10', comment: null, next_step: null,
+    replied_at: null, last_touch_at: null, touch_count: 1, muted: false,
+    created_at: '2026-08-10T10:00:00Z', updated_at: '2026-08-10T10:00:00Z', ...over,
+  }) as OutreachContact;
+
+const week = '2026-08-10'; // понедельник
+
+check(
+  'рассылки недели считаются по дате касания',
+  statsForWeek([mk({ first_contact_date: '2026-08-11' }), mk({ first_contact_date: '2026-08-03' })], week).sent,
+  1,
+);
+
+check(
+  'ответ засчитывается по дате перехода, а не по текущему статусу',
+  statsForWeek(
+    [mk({ status: 'closed', first_contact_date: '2026-08-03', status_history: [
+      { status: 'sent', at: '2026-08-11T10:00:00Z' },
+      { status: 'replied', at: '2026-08-12T10:00:00Z' },
+      { status: 'closed', at: '2026-08-20T10:00:00Z' },
+    ] })],
+    week,
+  ),
+  { weekStart: week, sent: 0, replied: 1, calls: 0, closed: 0, bestDay: null, bestCount: 0 },
+);
+
+check(
+  '«ответил — отказ» тоже считается ответом',
+  statsForWeek([mk({ status_history: [{ status: 'replied_no', at: '2026-08-12T10:00:00Z' }] })], week).replied,
+  1,
+);
+
+check(
+  'один контакт не даёт два ответа',
+  statsForWeek([mk({ status_history: [
+    { status: 'replied', at: '2026-08-11T10:00:00Z' },
+    { status: 'replied_no', at: '2026-08-12T10:00:00Z' },
+  ] })], week).replied,
+  1,
+);
+
+const best = statsForWeek(
+  [
+    mk({ first_contact_date: '2026-08-11' }),
+    mk({ first_contact_date: '2026-08-11' }),
+    mk({ first_contact_date: '2026-08-13' }),
+  ],
+  week,
+);
+check('лучший день недели найден', best.bestDay, '2026-08-11');
+check('и его результат', best.bestCount, 2);
+
+check(
+  'текущая неделя в отчёты не попадает',
+  missingWeeks({ cycleStart: '2026-08-10', today: '2026-08-13', existing: [] }),
+  [],
+);
+check(
+  'закрытые недели попадают',
+  missingWeeks({ cycleStart: '2026-08-03', today: '2026-08-13', existing: [] }),
+  ['2026-08-03'],
+);
+check(
+  'уже посчитанные не дублируются',
+  missingWeeks({ cycleStart: '2026-07-27', today: '2026-08-13', existing: ['2026-08-03'] }),
+  ['2026-07-27'],
+);
 
 /* -------------------------------------------------------------------------- */
 section('Полнота словарей');

@@ -15,6 +15,8 @@ import { XpBar } from '@/components/XpBar';
 import { XpChart } from '@/components/XpChart';
 import { getLogicalDate, shiftDate } from '@/lib/date';
 import { needsEveningCheckin } from '@/lib/mode';
+import Link from 'next/link';
+import { missingWeeks, statsForWeek } from '@/lib/reports';
 import { createClient } from '@/lib/supabase/client';
 import type { WeeklyReport, XpTransaction } from '@/lib/types';
 import { FEATURE_LEVEL, nextLevelTeaser, unlocked, type FeatureKey } from '@/lib/xp';
@@ -49,9 +51,54 @@ export default function ProgressPage() {
           .order('week_start', { ascending: false }),
       ]);
       setTransactions((xpRes.data as XpTransaction[]) ?? []);
-      setReports((reportRes.data as WeeklyReport[]) ?? []);
+
+      const existing = (reportRes.data as WeeklyReport[]) ?? [];
+      setReports(existing);
+
+      // Отчёт за закрытую неделю не меняется, поэтому считаем его один раз
+      // и сохраняем. Крон для этого не нужен: недостающие недели
+      // достраиваются при первом заходе на страницу.
+      if (!app.profile) return;
+
+      const gaps = missingWeeks({
+        cycleStart: app.profile.cycle_start_date,
+        today: app.today,
+        existing: existing.map((r) => r.week_start),
+      });
+
+      if (gaps.length === 0) return;
+
+      const rows = gaps.map((monday) => {
+        const st = statsForWeek(app.contacts, monday);
+        return {
+          user_id: app.user!.id,
+          week_start: monday,
+          sent: st.sent,
+          replied: st.replied,
+          calls: st.calls,
+          closed: st.closed,
+          best_day: st.bestDay,
+          best_count: st.bestCount,
+          xp_earned: 0,
+        };
+      });
+
+      const { data: created } = await supabase
+        .from('weekly_reports')
+        .upsert(rows as never, { onConflict: 'user_id,week_start' })
+        .select('*');
+
+      if (created) {
+        setReports((previous) => {
+          const merged = [...(created as WeeklyReport[]), ...previous];
+          const seen = new Set<string>();
+          return merged
+            .filter((r) => (seen.has(r.week_start) ? false : seen.add(r.week_start)))
+            .sort((a, b) => b.week_start.localeCompare(a.week_start));
+        });
+      }
     })();
-  }, [app.user, app.today]);
+  }, [app.user, app.today, app.profile, app.contacts]);
 
   const last7 = useMemo(() => {
     const map = new Map<string, number>();
@@ -188,13 +235,21 @@ export default function ProgressPage() {
                     : 'border-glass-border bg-white/[0.02]'
                 }`}
               >
+                {/* Раздел «Проект» — единственный с отдельной страницей,
+                    поэтому на мобильном попасть в него можно только отсюда. */}
                 <span className={`mt-0.5 shrink-0 ${open ? 'text-warn' : 'text-white/20'}`}>
                   {open ? <Sparkles size={17} /> : <Lock size={17} />}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className={`block text-sm font-bold ${open ? 'text-white' : 'text-white/35'}`}>
-                    {t.features[key]}
-                  </span>
+                  {open && key === 'project' ? (
+                    <Link href="/project" className="block text-sm font-bold underline decoration-white/30 underline-offset-4">
+                      {t.features[key]}
+                    </Link>
+                  ) : (
+                    <span className={`block text-sm font-bold ${open ? 'text-white' : 'text-white/35'}`}>
+                      {t.features[key]}
+                    </span>
+                  )}
                   <span className={`mt-0.5 block text-xs leading-snug ${open ? 'text-muted' : 'text-white/25'}`}>
                     {open
                       ? t.features[`${key}Desc` as const]
