@@ -27,6 +27,7 @@ import { followUpState, needsTouch, intervalFor, compareUrgency, SILENT_STEPS } 
 import { OFFER_RESULTS, CONTACT_STATUSES, SENT_STATUSES, REPLIED_STATUSES } from '@/lib/types';
 import type { OutreachContact } from '@/lib/types';
 import { statsForWeek, missingWeeks } from '@/lib/reports';
+import { buildPush } from '@/lib/push-messages';
 import { getLogicalDate, weekDates, daysBetween } from '@/lib/date';
 import { ru } from '@/lib/i18n/ru';
 import { en } from '@/lib/i18n/en';
@@ -476,6 +477,24 @@ check(
   missingWeeks({ cycleStart: '2026-07-27', today: '2026-08-13', existing: ['2026-08-03'] }),
   ['2026-07-27'],
 );
+
+
+/* -------------------------------------------------------------------------- */
+section('Тексты уведомлений');
+
+const push = (over: Partial<Parameters<typeof buildPush>[0]>) =>
+  buildPush({ slot: 'morning', sent: 0, quota: 5, sentYesterday: 0, quotaYesterday: 5, streak: 0, ...over });
+
+check('утро после закрытой квоты', push({ sentYesterday: 6 })?.body, 'Вчера: 6 рассылок. Сегодня квота 5. Начинай.');
+check('утро после провала', push({ sentYesterday: 2 })?.body, 'Вчера не дотянул. Сегодня закрываешь. 5 рассылок.');
+check('день, меньше трети', push({ slot: 'midday', sent: 1 })?.body, 'Только 1 из 5. Полдня прошло. Садись.');
+check('день, середина', push({ slot: 'midday', sent: 2 })?.body, '2 из 5. Хорошо. Не останавливайся.');
+check('день, почти добил', push({ slot: 'midday', sent: 4 })?.body, '4 из 5. Почти. Добей.');
+check('днём при закрытой квоте молчим', push({ slot: 'midday', sent: 5 }), null);
+check('вечер после успеха', push({ slot: 'evening', sent: 5, streak: 3 })?.body, 'Закрыл 5. Стрик: 3 дней. Завтра квота растёт.');
+check('вечер после провала', push({ slot: 'evening', sent: 3 })?.body, '3 из 5. Завтра с нуля. Квота та же — ещё шанс.');
+check('ночью зовём на чекин режима', push({ slot: 'night' })?.title, 'Сегодня держался?');
+check('ночной пуш ведёт на прогресс', push({ slot: 'night' })?.url, '/progress');
 
 /* -------------------------------------------------------------------------- */
 section('Полнота словарей');

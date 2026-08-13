@@ -9,6 +9,7 @@ import { useLanguage } from '@/components/LanguageProvider';
 import { Button, Field, FullPageLoader, Label, Segmented, Spinner } from '@/components/ui';
 import { formatDateTime } from '@/lib/date';
 import { setSheetsConnected, syncSheetsNow } from '@/lib/sheets-client';
+import { pushStatus, subscribeToPush, unsubscribeFromPush, type PushStatus } from '@/lib/push-client';
 import { createClient } from '@/lib/supabase/client';
 import type { GoogleIntegration, Language } from '@/lib/types';
 
@@ -28,6 +29,9 @@ function SettingsContent() {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
+  const [push, setPush] = useState<PushStatus>('default');
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushNote, setPushNote] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -62,6 +66,45 @@ function SettingsContent() {
   useEffect(() => {
     void loadIntegration();
   }, [loadIntegration]);
+
+  // Статус разрешения читается только в браузере.
+  useEffect(() => {
+    setPush(pushStatus());
+  }, []);
+
+  async function togglePush() {
+    setPushBusy(true);
+    setPushNote(null);
+    try {
+      if (profile?.push_enabled) {
+        await unsubscribeFromPush();
+        await updateProfile({ push_enabled: false });
+        setPush(pushStatus());
+        return;
+      }
+
+      const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      if (!key) {
+        setPushNote(t.settings.pushUnsupported);
+        return;
+      }
+
+      const result = await subscribeToPush(key);
+      if (result.ok) {
+        await updateProfile({ push_enabled: true });
+        setPushNote(t.settings.pushOn);
+      } else if (result.reason === 'needs-install') {
+        setPushNote(t.settings.pushUnsupported);
+      } else if (result.reason === 'denied') {
+        setPushNote(t.settings.pushDenied);
+      } else {
+        setPushNote(t.common.error);
+      }
+      setPush(pushStatus());
+    } finally {
+      setPushBusy(false);
+    }
+  }
 
   // Сообщения после возврата из OAuth-редиректа.
   useEffect(() => {
@@ -278,8 +321,32 @@ function SettingsContent() {
         </div>
       </GlassCard>
 
-      {/* -------------------------- Интеграции --------------------------- */}
+      {/* -------------------------- Уведомления --------------------------- */}
       <GlassCard delay={3}>
+        <CardTitle>{t.settings.push}</CardTitle>
+
+        <p className="mb-3 text-sm text-muted">{t.settings.pushHint}</p>
+
+        <Button
+          variant={profile.push_enabled ? 'ghost' : 'primary'}
+          full
+          onClick={togglePush}
+          disabled={pushBusy || push === 'unsupported'}
+        >
+          {pushBusy ? <Spinner /> : null}
+          {profile.push_enabled ? t.settings.pushDisable : t.settings.pushEnable}
+        </Button>
+
+        {(pushNote || push === 'needs-install' || push === 'denied') && (
+          <p className="mt-3 rounded-xl border border-glass-border bg-white/[0.04] px-3 py-2.5 text-sm leading-relaxed text-white/70">
+            {pushNote ??
+              (push === 'needs-install' ? t.settings.pushUnsupported : t.settings.pushDenied)}
+          </p>
+        )}
+      </GlassCard>
+
+      {/* -------------------------- Интеграции --------------------------- */}
+      <GlassCard delay={4}>
         <CardTitle>{t.settings.integrations}</CardTitle>
 
         <div className="space-y-4">
@@ -353,7 +420,7 @@ function SettingsContent() {
       </GlassCard>
 
       {/* ----------------------------- Язык ------------------------------ */}
-      <GlassCard delay={4}>
+      <GlassCard delay={5}>
         <CardTitle>{t.settings.language}</CardTitle>
 
         <Segmented<Language>
@@ -371,7 +438,7 @@ function SettingsContent() {
       </GlassCard>
 
       {/* ----------------------------- Данные ---------------------------- */}
-      <GlassCard delay={5}>
+      <GlassCard delay={6}>
         <CardTitle>{t.settings.data}</CardTitle>
 
         <div className="space-y-3">

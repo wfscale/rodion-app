@@ -68,6 +68,6 @@ export const config = {
      *  — OAuth-роутов Google: у них своя проверка сессии, редирект middleware
      *    оборвал бы callback.
      */
-    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|api/google|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|api/google|api/push|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 };
