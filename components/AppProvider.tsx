@@ -107,6 +107,24 @@ type AppContextValue = {
   signOut: () => Promise<void>;
 };
 
+/**
+ * Сообщение об ошибке для человека.
+ *
+ * Supabase на недоступной базе отвечает текстом от своего прокси
+ * («upstream connect error… delayed connect error: 111»). Показывать это
+ * пользователю бессмысленно: он не может ничего с этим сделать, а выглядит
+ * как поломка приложения. Переводим в понятное и подсказываем, что данные
+ * не потеряны.
+ */
+function humanError(message: string): string {
+  const infra =
+    /upstream connect|connect error|503|service unavailable|failed to fetch|networkerror|load failed/i;
+  if (infra.test(message)) {
+    return 'База данных сейчас недоступна. Ничего не потеряно — попробуй через минуту.';
+  }
+  return message;
+}
+
 const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
@@ -204,7 +222,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .single();
 
       if (createError) {
-        setError(createError.message);
+        setError(humanError(createError.message));
         setLoading(false);
         return;
       }
@@ -261,7 +279,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setProfile((previous) => (previous ? { ...previous, ...patch } : previous));
 
       const { error: updateError } = await supabase.from('profiles').update(patch).eq('id', user.id);
-      if (updateError) setError(updateError.message);
+      if (updateError) setError(humanError(updateError.message));
     },
     [supabase, user],
   );
@@ -277,7 +295,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
 
       if (rpcError) {
-        setError(rpcError.message);
+        setError(humanError(rpcError.message));
         return 0;
       }
 
@@ -493,7 +511,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .single();
 
       if (insertError) {
-        setError(insertError.message);
+        setError(humanError(insertError.message));
         return null;
       }
 
@@ -572,7 +590,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .eq('id', contact.id);
 
       if (updateError) {
-        setError(updateError.message);
+        setError(humanError(updateError.message));
         return;
       }
 
@@ -602,7 +620,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .from('outreach_contacts')
         .update(patch as never)
         .eq('id', id);
-      if (updateError) setError(updateError.message);
+      if (updateError) setError(humanError(updateError.message));
       else void syncSheets();
     },
     [supabase],
@@ -612,7 +630,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (id: string) => {
       setContacts((previous) => previous.filter((c) => c.id !== id));
       const { error: deleteError } = await supabase.from('outreach_contacts').delete().eq('id', id);
-      if (deleteError) setError(deleteError.message);
+      if (deleteError) setError(humanError(deleteError.message));
       else void syncSheets();
     },
     [supabase],
@@ -641,7 +659,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .eq('id', contact.id);
 
       if (touchError) {
-        setError(touchError.message);
+        setError(humanError(touchError.message));
         return;
       }
 
@@ -749,7 +767,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .single();
 
       if (upsertError) {
-        setError(upsertError.message);
+        setError(humanError(upsertError.message));
         return;
       }
 
@@ -865,7 +883,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       {error && (
         <div className="fixed inset-x-4 top-[calc(12px+env(safe-area-inset-top))] z-[85] mx-auto max-w-md">
           <div className="glass flex items-start gap-3 border-[rgba(255,107,107,0.3)] bg-[rgba(255,107,107,0.08)] p-3">
-            <p className="min-w-0 flex-1 text-sm leading-snug text-danger">{error}</p>
+            <p className="min-w-0 flex-1 text-sm leading-snug text-danger">{humanError(error)}</p>
             <button
               type="button"
               onClick={() => setError(null)}
