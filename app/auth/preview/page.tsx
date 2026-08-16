@@ -18,15 +18,30 @@ import { HabitsBlock } from '@/components/home/HabitsBlock';
 import { HomeHeader } from '@/components/home/HomeHeader';
 import { OutreachCounter } from '@/components/home/OutreachCounter';
 import { QuickAddOutreach } from '@/components/home/QuickAddOutreach';
+import { RoundNudge } from '@/components/home/RoundNudge';
 import { ModeBlock } from '@/components/mode/ModeBlock';
 import { ContactCards } from '@/components/outreach/ContactCards';
 import { ContactTable, type TableSort } from '@/components/outreach/ContactTable';
 import { FollowUpList } from '@/components/outreach/FollowUpList';
 import { FunnelChart } from '@/components/outreach/FunnelChart';
+import { HourlyCard } from '@/components/outreach/HourlyCard';
+import { NicheAnalytics } from '@/components/outreach/NicheAnalytics';
+import { OutreachFilters } from '@/components/outreach/OutreachFilters';
+import { PatternsCard } from '@/components/outreach/PatternsCard';
+import { PrimeList } from '@/components/outreach/PrimeList';
+import { AccentPicker } from '@/components/progress/AccentPicker';
+import { AchievementsCard } from '@/components/progress/AchievementsCard';
+import { GrowthChart } from '@/components/progress/GrowthChart';
+import { Heatmap } from '@/components/progress/Heatmap';
+import { HallOfFame, MentorCard, WeekCompare } from '@/components/progress/InsightCards';
+import { LevelLadder } from '@/components/progress/LevelLadder';
+import { ReminderList } from '@/components/reminders/ReminderList';
 import { BottomNav } from '@/components/BottomNav';
-import type { ActivityEntry, DailyTask, OutreachContact } from '@/lib/types';
+import { EMPTY_FILTERS, nicheOptions, type OutreachFilters as Filters } from '@/lib/outreach-filter';
+import type { ActivityEntry, DailyTask, OutreachContact, Reminder } from '@/lib/types';
 
 const TODAY = '2026-08-13';
+const NOW = `${TODAY}T12:00`;
 
 const contact = (over: Partial<OutreachContact>): OutreachContact =>
   ({
@@ -59,6 +74,8 @@ const CONTACTS: OutreachContact[] = [
   contact({ name: '@maria_psy', niche: 'Психология', status: 'sent' }),
   contact({ name: '@vlad_money', niche: 'Финансы', status: 'blocked' }),
   contact({ name: '@olga_art', niche: 'Творчество', status: 'closed' }),
+  // Ответ есть, исход отрицательный — строка обязана быть красной.
+  contact({ name: '@igor_sales', niche: 'Продажи', status: 'replied_no' }),
 ];
 
 const ACTIVITY: ActivityEntry[] = [
@@ -73,11 +90,48 @@ const TASKS: DailyTask[] = [
   { id: 't2', user_id: 'u', date: TODAY, text: 'Ответить Дмитрию', completed: true, created_at: '' },
 ];
 
+const reminder = (over: Partial<Reminder>): Reminder =>
+  ({
+    id: Math.random().toString(36).slice(2),
+    user_id: 'u',
+    title: 'Позвонить и добить оффер',
+    note: null,
+    due_at: `${TODAY}T09:00`,
+    contact_id: null,
+    done: false,
+    created_at: '',
+    updated_at: '',
+    ...over,
+  }) as Reminder;
+
+const REMINDERS: Reminder[] = [
+  reminder({ title: 'Отправить смету Анне', due_at: '2026-08-12T18:00' }),
+  reminder({ title: 'Написать Дмитрию до созвона', due_at: `${TODAY}T10:00`, contact_id: CONTACTS[1].id }),
+  reminder({ title: 'Собрать разбор ниши', due_at: `${TODAY}T20:00` }),
+  reminder({ title: 'Прозвон по базе', due_at: '2026-08-15T11:00' }),
+  reminder({ title: 'Старая задача', due_at: '2026-08-01T11:00', done: true }),
+];
+
+const OFFERS = [
+  { content: 'Привет! Посмотрел твой блог, зацепило про запуск. Могу собрать воронку — интересно?', result: 'replied' },
+  { content: 'Привет! Смотрел последний запуск, сильно. Вижу, где теряешь 30% выручки. Обсудим?', result: 'replied_no' },
+  { content: 'Привет! Заметил, что у тебя нет продукта под холодную аудиторию. Давай покажу схему?', result: 'call' },
+  { content: 'Предлагаю сотрудничество на выгодных условиях', result: 'sent' },
+  { content: 'Предлагаю услуги продюсера, большой опыт работы с экспертами', result: 'sent' },
+  { content: 'Здравствуйте, готов обсудить совместную работу', result: 'sent' },
+];
+
+const CHART = Array.from({ length: 14 }, (_, i) => ({
+  date: `2026-07-${String(31 - 13 + i).padStart(2, '0')}`,
+  value: [0, 2, 5, 3, 8, 12, 7, 0, 4, 9, 15, 11, 6, 10][i],
+}));
+
 export default function PreviewPage() {
   if (process.env.NODE_ENV === 'production') notFound();
 
   const [done, setDone] = useState<Record<string, boolean>>({ water: true, pushups: true });
   const [sort, setSort] = useState<TableSort | null>(null);
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
 
   return (
     <main className="md:pl-[240px]">
@@ -95,7 +149,12 @@ export default function PreviewPage() {
           cycleDay={1}
         />
 
-        <OutreachCounter sent={3} quota={5} record={3} daysToGrow={3} nextQuota={8} />
+        <OutreachCounter sent={12} quota={5} record={3} daysToGrow={3} nextQuota={8} showOverdrive />
+
+        {/* Три состояния наджа: до квоты, до ровного дня, до ровного счёта. */}
+        <RoundNudge sentToday={3} quota={5} total={22} />
+        <RoundNudge sentToday={7} quota={5} total={22} />
+        <RoundNudge sentToday={10} quota={5} total={24} />
 
         <QuickAddOutreach today={TODAY} onAdd={async () => undefined} />
 
@@ -114,11 +173,28 @@ export default function PreviewPage() {
 
         <FollowUpList
           contacts={CONTACTS}
+          reminders={REMINDERS}
           today={TODAY}
+          now={NOW}
           onTouch={() => undefined}
           onMute={() => undefined}
           onOpen={() => undefined}
+          onCompleteReminder={() => undefined}
         />
+
+        <OutreachFilters
+          filters={filters}
+          onChange={setFilters}
+          niches={nicheOptions(CONTACTS)}
+        />
+
+        <NicheAnalytics contacts={CONTACTS} />
+
+        <PrimeList contacts={CONTACTS} today={TODAY} onOpen={() => undefined} />
+
+        <HourlyCard contacts={CONTACTS} />
+
+        <PatternsCard samples={OFFERS} />
 
         <ContactCards contacts={CONTACTS} onOpenContact={() => undefined} highlightId={null} />
 
@@ -133,6 +209,37 @@ export default function PreviewPage() {
         />
 
         <ModeBlock counters={{ porn: 16, mb: 14, sugar: 15 }} />
+
+        {/* Прогресс */}
+        <div className="glass p-4">
+          <GrowthChart data={CHART} unit="рассылки" />
+        </div>
+
+        <LevelLadder level={3} />
+
+        <Heatmap contacts={CONTACTS} today={TODAY} weeks={12} />
+
+        <AchievementsCard
+          input={{ sent: 30, replied: 4, calls: 1, closed: 0, chain: 8, record: 12, quotaStreak: 3 }}
+        />
+
+        <WeekCompare contacts={CONTACTS} today={TODAY} />
+
+        <MentorCard numbers={{ sent: 120, replied: 18, calls: 2, closed: 0, overdueTouches: 1 }} />
+
+        <HallOfFame contacts={CONTACTS} />
+
+        <AccentPicker />
+
+        {/* Напоминания */}
+        <ReminderList
+          reminders={REMINDERS}
+          contacts={CONTACTS}
+          now={NOW}
+          today={TODAY}
+          onToggle={() => undefined}
+          onOpen={() => undefined}
+        />
       </div>
 
       <BottomNav />

@@ -8,6 +8,10 @@ export type Language = 'ru' | 'en';
 /**
  * Статусы воронки. Порядок = порядок движения вперёд, поэтому им же
  * пользуются кнопки в карточке и уровни визуальной воронки.
+ *
+ * Статуса «Отказ» здесь нет намеренно: он дублировал «Ответил — отказ», а два
+ * почти одинаковых слова в списке заставляли выбирать между ними каждый раз.
+ * Отказ без ответа — это просто молчание, для него есть «Отправлено».
  */
 export const CONTACT_STATUSES = [
   'not_sent',
@@ -15,14 +19,37 @@ export const CONTACT_STATUSES = [
   'read',
   'replied',
   'replied_no',
-  'refused',
   'blocked',
   'call',
   'closed',
 ] as const;
 export type ContactStatus = (typeof CONTACT_STATUSES)[number];
 
-/** Статусы, которые считаются «дошёл до ответа». */
+/**
+ * Статусы, исчезнувшие из шкалы. В базе строки со старым значением ещё
+ * встречаются, поэтому любой статус, пришедший снаружи, проходит через
+ * normalizeStatus() — иначе UI споткнётся о ключ, которого нет в словаре.
+ */
+export const LEGACY_STATUS_ALIASES: Record<string, ContactStatus> = {
+  refused: 'replied_no',
+  ignored: 'replied_no',
+};
+
+/** Приводит любое значение статуса к текущей шкале. */
+export function normalizeStatus(value: string | null | undefined): ContactStatus {
+  if (!value) return 'sent';
+  if ((CONTACT_STATUSES as readonly string[]).includes(value)) return value as ContactStatus;
+  return LEGACY_STATUS_ALIASES[value] ?? 'sent';
+}
+
+/**
+ * Статусы, которые считаются «дошёл до ответа».
+ *
+ * «Ответил — отказ» здесь обязателен: человек ответил. То, что ответ
+ * отрицательный, — вопрос качества оффера, а не факта контакта. Считать это
+ * молчанием значит занижать собственную конверсию и не видеть, что тексты
+ * доходят.
+ */
 export const REPLIED_STATUSES: ContactStatus[] = ['replied', 'replied_no', 'call', 'closed'];
 /** Статусы, которые считаются «дошёл до созвона». */
 export const CALL_STATUSES: ContactStatus[] = ['call', 'closed'];
@@ -32,11 +59,12 @@ export const SENT_STATUSES: ContactStatus[] = [
   'read',
   'replied',
   'replied_no',
-  'refused',
   'blocked',
   'call',
   'closed',
 ];
+/** Исходы, которые подсвечиваются красным: дверь закрылась. */
+export const NEGATIVE_STATUSES: ContactStatus[] = ['replied_no', 'blocked'];
 
 /**
  * Результат оффера — это и есть статус контакта, которому его отправили.
@@ -188,6 +216,27 @@ export type Note = {
   updated_at: string;
 };
 
+/**
+ * Напоминание — задача с датой и временем.
+ *
+ * contact_id делит их на два непересекающихся мира: с привязкой напоминание
+ * всплывает в блоке касаний на странице рассылок, без привязки живёт только
+ * во вкладке «Напоминания». Смешивать нельзя — рабочий список дня должен
+ * содержать только людей.
+ */
+export type Reminder = {
+  id: string;
+  user_id: string;
+  title: string;
+  note: string | null;
+  /** Локальный момент срабатывания: 'YYYY-MM-DDTHH:mm'. Без таймзоны. */
+  due_at: string;
+  contact_id: string | null;
+  done: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 export type XpTransaction = {
   id: string;
   user_id: string;
@@ -292,6 +341,7 @@ export type Database = {
       outreach_contacts: Table<OutreachContact, 'user_id' | 'name'>;
       offers: Table<Offer, 'user_id' | 'title' | 'content'>;
       notes: Table<Note, 'user_id' | 'content'>;
+      reminders: Table<Reminder, 'user_id' | 'title' | 'due_at'>;
       xp_transactions: Table<XpTransaction, 'user_id' | 'amount' | 'reason'>;
       activity_feed: Table<ActivityEntry, 'user_id' | 'type'>;
       daily_tasks: Table<DailyTask, 'user_id' | 'date' | 'text'>;

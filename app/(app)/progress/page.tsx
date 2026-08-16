@@ -1,6 +1,5 @@
 'use client';
 
-import { Lock, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/components/AppProvider';
 import { CardTitle, GlassCard } from '@/components/GlassCard';
@@ -8,20 +7,26 @@ import { useLanguage } from '@/components/LanguageProvider';
 import { LockedFeature } from '@/components/LockedFeature';
 import { EveningCheckin } from '@/components/mode/EveningCheckin';
 import { ModeBlock } from '@/components/mode/ModeBlock';
+import { AccentPicker } from '@/components/progress/AccentPicker';
+import { AchievementsCard } from '@/components/progress/AchievementsCard';
+import { GrowthChart, type ChartPoint } from '@/components/progress/GrowthChart';
+import { Heatmap } from '@/components/progress/Heatmap';
+import { HallOfFame, MentorCard, WeekCompare } from '@/components/progress/InsightCards';
+import { LevelLadder } from '@/components/progress/LevelLadder';
 import { WeeklyReportView } from '@/components/report/WeeklyReportView';
 import { ScaleDashboard } from '@/components/scale/ScaleDashboard';
-import { Button, FullPageLoader, PageTitle } from '@/components/ui';
+import { Button, FullPageLoader, PageTitle, Segmented } from '@/components/ui';
 import { XpBar } from '@/components/XpBar';
-import { XpChart } from '@/components/XpChart';
 import { getLogicalDate, shiftDate } from '@/lib/date';
+import { dailySeries, funnelTotals, overdueTouchCount, xpSeries } from '@/lib/insights';
 import { needsEveningCheckin } from '@/lib/mode';
-import Link from 'next/link';
 import { missingWeeks, statsForWeek } from '@/lib/reports';
 import { createClient } from '@/lib/supabase/client';
 import type { WeeklyReport, XpTransaction } from '@/lib/types';
-import { FEATURE_LEVEL, nextLevelTeaser, unlocked, type FeatureKey } from '@/lib/xp';
+import { FEATURE_LEVEL, nextLevelTeaser } from '@/lib/xp';
 
-const FEATURE_ORDER: FeatureKey[] = ['offers', 'niches', 'speed', 'project', 'report', 'scale'];
+type Metric = 'sent' | 'xp';
+type Range = 7 | 14 | 30 | 90;
 
 export default function ProgressPage() {
   const { t, tf } = useLanguage();
@@ -30,6 +35,9 @@ export default function ProgressPage() {
   const [transactions, setTransactions] = useState<XpTransaction[]>([]);
   const [reports, setReports] = useState<WeeklyReport[]>([]);
   const [checkinOpen, setCheckinOpen] = useState(false);
+
+  const [metric, setMetric] = useState<Metric>('sent');
+  const [range, setRange] = useState<Range>(14);
 
   useEffect(() => {
     if (!app.user) return;
@@ -100,17 +108,17 @@ export default function ProgressPage() {
     })();
   }, [app.user, app.today, app.profile, app.contacts]);
 
-  const last7 = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const tx of transactions) {
-      const date = getLogicalDate(new Date(tx.created_at));
-      map.set(date, (map.get(date) ?? 0) + tx.amount);
-    }
-    return Array.from({ length: 7 }, (_, i) => {
-      const date = shiftDate(app.today, -(6 - i));
-      return { date, xp: map.get(date) ?? 0 };
-    });
-  }, [transactions, app.today]);
+  /** Ряд для графика: рассылки по дате касания или XP по дате начисления. */
+  const chartData = useMemo<ChartPoint[]>(() => {
+    const series =
+      metric === 'sent'
+        ? dailySeries(app.contacts, app.today, range)
+        : xpSeries(transactions, app.today, range, (date) => getLogicalDate(date));
+
+    return series.map((point) => ({ date: point.date, value: point.sent }));
+  }, [metric, range, app.contacts, app.today, transactions]);
+
+  const funnel = useMemo(() => funnelTotals(app.contacts), [app.contacts]);
 
   if (app.loading || !app.profile) return <FullPageLoader />;
 
@@ -123,16 +131,16 @@ export default function ProgressPage() {
     sugar: profile.mode_sugar_days ?? 0,
   };
   const checkinDue = needsEveningCheckin(profile.mode_last_checkin, app.today);
-  const hasXp = last7.some((p) => p.xp > 0);
+  const hasChartData = chartData.some((point) => point.value > 0);
 
   const daysActive = Math.max(1, app.cycleDayNumber);
-  const closedTotal = app.contacts.filter((c) => c.status === 'closed').length;
 
   return (
     <div className="space-y-4">
       <PageTitle>{t.progress.title}</PageTitle>
 
-      {/* Уровень: только текущий и тизер следующего. Полного списка нет. */}
+      {/* Уровень: текущий и тизер следующего. Полная лестница — ниже,
+          и в ней всё равно видно только текущий блок из пяти ступеней. */}
       <GlassCard>
         <CardTitle right={<span className="text-sm font-bold">{profile.total_xp} XP</span>}>
           {t.progress.levelTitle} {level}
@@ -179,6 +187,44 @@ export default function ProgressPage() {
         </div>
       </GlassCard>
 
+      {/* График: метрика и окно переключаются, высота шкалы — никогда. */}
+      <GlassCard delay={2}>
+        <CardTitle>{t.progress.chartTitle}</CardTitle>
+
+        <div className="mb-3 space-y-2">
+          <Segmented<Metric>
+            value={metric}
+            onChange={setMetric}
+            options={[
+              { value: 'sent', label: t.progress.chartSent },
+              { value: 'xp', label: t.progress.chartXp },
+            ]}
+          />
+          <Segmented<string>
+            value={String(range)}
+            onChange={(value) => setRange(Number(value) as Range)}
+            options={[
+              { value: '7', label: t.progress.range7 },
+              { value: '14', label: t.progress.range14 },
+              { value: '30', label: t.progress.range30 },
+              { value: '90', label: t.progress.range90 },
+            ]}
+          />
+        </div>
+
+        {hasChartData ? (
+          <GrowthChart
+            data={chartData}
+            unit={metric === 'sent' ? t.progress.chartSent : t.common.xp}
+          />
+        ) : (
+          <p className="py-6 text-center text-sm text-muted">{t.progress.chartEmpty}</p>
+        )}
+      </GlassCard>
+
+      {/* Лестница уровней */}
+      <LevelLadder level={level} />
+
       {/* Режим */}
       <ModeBlock counters={counters} />
 
@@ -188,24 +234,57 @@ export default function ProgressPage() {
         </Button>
       )}
 
-      {/* График XP */}
-      <GlassCard delay={2}>
-        <CardTitle>{t.progress.xpChart}</CardTitle>
-        {hasXp ? <XpChart data={last7} /> : <p className="py-6 text-center text-sm text-muted">{t.progress.xpChartEmpty}</p>}
-      </GlassCard>
+      {/* Тепловая карта — 8-й уровень, разворачивается до года на 19-м. */}
+      {app.can('heatmap') && (
+        <Heatmap contacts={app.contacts} today={app.today} weeks={app.can('annual') ? 52 : 12} />
+      )}
+
+      {/* Витрина достижений — 10-й уровень. */}
+      {app.can('achievements') && (
+        <AchievementsCard
+          input={{
+            sent: funnel.sent,
+            replied: funnel.replied,
+            calls: funnel.calls,
+            closed: funnel.closed,
+            chain: app.chain,
+            record: app.quota.record,
+            quotaStreak: app.quota.streak,
+          }}
+        />
+      )}
+
+      {/* Динамика недель — 12-й уровень. */}
+      {app.can('compare') && <WeekCompare contacts={app.contacts} today={app.today} />}
+
+      {/* Личный разбор — 15-й уровень. */}
+      {app.can('mentor') && (
+        <MentorCard
+          numbers={{
+            ...funnel,
+            overdueTouches: overdueTouchCount(app.contacts, app.today),
+          }}
+        />
+      )}
+
+      {/* Зал славы — 16-й уровень. */}
+      {app.can('hall') && <HallOfFame contacts={app.contacts} />}
+
+      {/* Акценты интерфейса — 17-й уровень. */}
+      {app.can('themes') && <AccentPicker />}
 
       {/* Еженедельный отчёт — 6-й уровень */}
-      {unlocked('report', level) ? (
+      {app.can('report') ? (
         <WeeklyReportView reports={reports} />
       ) : (
         <LockedFeature featureKey="report" requiredLevel={FEATURE_LEVEL.report} />
       )}
 
       {/* Дашборд масштаба — 7-й уровень */}
-      {unlocked('scale', level) ? (
+      {app.can('scale') ? (
         <ScaleDashboard
           sentTotal={app.contacts.length}
-          closedTotal={closedTotal}
+          closedTotal={funnel.closed}
           daysActive={daysActive}
           avgDeal={profile.avg_deal_amount ?? 0}
           onAvgDealChange={(value) => void app.updateProfile({ avg_deal_amount: value })}
@@ -214,47 +293,14 @@ export default function ProgressPage() {
         <LockedFeature featureKey="scale" requiredLevel={FEATURE_LEVEL.scale} />
       )}
 
-      {/* Что уже открыто */}
-      <GlassCard delay={5}>
-        <CardTitle>{t.progress.unlocksTitle}</CardTitle>
-        <ul className="space-y-2">
-          {FEATURE_ORDER.map((key) => {
-            const open = unlocked(key, level);
-            return (
-              <li
-                key={key}
-                className={`flex items-start gap-3 rounded-2xl border p-3 ${
-                  open
-                    ? 'border-[rgba(255,209,102,0.25)] bg-[rgba(255,209,102,0.06)]'
-                    : 'border-glass-border bg-white/[0.02]'
-                }`}
-              >
-                {/* Раздел «Проект» — единственный с отдельной страницей,
-                    поэтому на мобильном попасть в него можно только отсюда. */}
-                <span className={`mt-0.5 shrink-0 ${open ? 'text-warn' : 'text-white/20'}`}>
-                  {open ? <Sparkles size={17} /> : <Lock size={17} />}
-                </span>
-                <span className="min-w-0 flex-1">
-                  {open && key === 'project' ? (
-                    <Link href="/project" className="block text-sm font-bold underline decoration-white/30 underline-offset-4">
-                      {t.features[key]}
-                    </Link>
-                  ) : (
-                    <span className={`block text-sm font-bold ${open ? 'text-white' : 'text-white/35'}`}>
-                      {t.features[key]}
-                    </span>
-                  )}
-                  <span className={`mt-0.5 block text-xs leading-snug ${open ? 'text-muted' : 'text-white/25'}`}>
-                    {open
-                      ? t.features[`${key}Desc` as const]
-                      : `${t.common.locked} ${FEATURE_LEVEL[key]}`}
-                  </span>
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </GlassCard>
+      {/* Апекс — 20-й уровень. Закрытого больше нет, и это стоит сказать. */}
+      {app.can('apex') && (
+        <GlassCard delay={8}>
+          <CardTitle>{t.features.apex}</CardTitle>
+          <p className="text-base font-bold leading-snug">{t.features.apexUnlock}</p>
+          <p className="mt-2 text-sm leading-relaxed text-muted">{t.features.apexDesc}</p>
+        </GlassCard>
+      )}
 
       <EveningCheckin
         open={checkinOpen}

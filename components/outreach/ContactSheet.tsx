@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { BookmarkPlus, Trash2 } from 'lucide-react';
+import { BellPlus, BookmarkPlus, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { BottomSheet } from '@/components/BottomSheet';
 import { useLanguage } from '@/components/LanguageProvider';
@@ -9,6 +9,8 @@ import { Badge, Button, Field, Label, TextArea } from '@/components/ui';
 import { formatDateTime, getLogicalDate } from '@/lib/date';
 import {
   CONTACT_STATUSES,
+  NEGATIVE_STATUSES,
+  normalizeStatus,
   type ContactStatus,
   type OutreachContact,
 } from '@/lib/types';
@@ -76,13 +78,19 @@ export function instagramHandleFrom(url: string | null | undefined): string {
     .replace(/^@+/, '');
 }
 
-/** Цветовой тон бейджа по позиции в воронке. */
+/**
+ * Цветовой тон бейджа по позиции в воронке.
+ *
+ * Красный означает ровно одно: дверь закрылась. «Ответил — отказ» и
+ * «Заблокировал» — единственные такие исходы, и их видно с другого конца
+ * списка, чтобы не тратить на них ни одного лишнего взгляда.
+ */
 export function statusTone(
   status: ContactStatus,
 ): 'neutral' | 'success' | 'danger' | 'warn' {
   if (status === 'closed') return 'success';
   if (status === 'call' || status === 'replied') return 'warn';
-  if (status === 'refused') return 'danger';
+  if (NEGATIVE_STATUSES.includes(status)) return 'danger';
   return 'neutral';
 }
 
@@ -94,7 +102,7 @@ function toDraft(contact: OutreachContact | null): ContactDraft {
     telegram_handle: normalizeHandle(contact.telegram_handle),
     instagram_url: contact.instagram_url ?? '',
     comment: contact.comment ?? '',
-    status: contact.status,
+    status: normalizeStatus(contact.status),
     first_contact_date: (contact.first_contact_date ?? getLogicalDate()).slice(0, 10),
     next_step: contact.next_step ?? '',
   };
@@ -112,6 +120,8 @@ type ContactSheetProps = {
   onSave: (draft: ContactDraft) => void | Promise<void>;
   onDelete: (id: string) => void | Promise<void>;
   onSaveToOffers: (contact: OutreachContact) => void | Promise<void>;
+  /** Поставить напоминание по этому человеку. */
+  onAddReminder?: (contact: OutreachContact) => void;
   /** Библиотека офферов открывается со 2-го уровня. */
   canSaveToOffers?: boolean;
   /** «Следующий шаг» открывается с 4-го уровня. */
@@ -125,6 +135,7 @@ export function ContactSheet({
   onSave,
   onDelete,
   onSaveToOffers,
+  onAddReminder,
   canSaveToOffers = false,
   showNextStep = false,
 }: ContactSheetProps) {
@@ -305,6 +316,13 @@ export function ContactSheet({
           />
         )}
 
+        {snapshot && onAddReminder && (
+          <Button variant="ghost" full onClick={() => onAddReminder(snapshot)}>
+            <BellPlus size={16} />
+            {t.outreach.addReminder}
+          </Button>
+        )}
+
         {canSaveToOffers && snapshot && (
           <Button
             variant="ghost"
@@ -327,17 +345,21 @@ export function ContactSheet({
               <p className="text-sm text-muted">{t.outreach.noHistory}</p>
             ) : (
               <ol className="relative space-y-3 border-l border-divider pl-4">
-                {history.map((entry, i) => (
-                  <li key={`${entry.at}-${i}`} className="relative">
-                    <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-white/40" />
-                    <div className="flex items-center gap-2">
-                      <Badge tone={statusTone(entry.status)}>{t.statuses[entry.status]}</Badge>
-                      <span className="text-xs text-white/30">
-                        {formatDateTime(entry.at, lang)}
-                      </span>
-                    </div>
-                  </li>
-                ))}
+                {history.map((entry, i) => {
+                  // В истории могут лежать статусы старой шкалы — приводим.
+                  const status = normalizeStatus(entry.status);
+                  return (
+                    <li key={`${entry.at}-${i}`} className="relative">
+                      <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-white/40" />
+                      <div className="flex items-center gap-2">
+                        <Badge tone={statusTone(status)}>{t.statuses[status]}</Badge>
+                        <span className="text-xs text-white/30">
+                          {formatDateTime(entry.at, lang)}
+                        </span>
+                      </div>
+                    </li>
+                  );
+                })}
               </ol>
             )}
           </div>

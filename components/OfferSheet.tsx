@@ -6,6 +6,7 @@ import { BottomSheet } from '@/components/BottomSheet';
 import { useLanguage } from '@/components/LanguageProvider';
 import { Button, Field, Label, Select, TextArea } from '@/components/ui';
 import {
+  normalizeStatus,
   OFFER_RESULTS,
   type Offer,
   type OfferResult,
@@ -85,7 +86,8 @@ export function OfferSheet({
     setTitle(offer?.title ?? '');
     setNiche(offer?.niche ?? '');
     setContent(offer?.content ?? '');
-    setResult(offer?.result ?? 'not_sent');
+    // В базе может лежать статус старой шкалы — приводим к текущей.
+    setResult(offer ? normalizeStatus(offer.result) : 'not_sent');
     setNote(offer?.note ?? '');
     setContactId(offer?.contact_id ?? '');
     setConfirming(false);

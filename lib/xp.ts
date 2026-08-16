@@ -16,21 +16,58 @@ export const XP = {
   DAILY_RECORD: 200,
   /** Каждые 5 рассылок сверх квоты. Потолка нет. */
   BONUS_OVER_QUOTA: 50,
+  /** Каждые 25 рассылок за всё время — веха, которая не сгорает. */
+  MILESTONE: 150,
+  /** Ровное число за день (кратное 5) — плата за «добей до круглого». */
+  ROUND_DAY: 25,
 
   MODE_KEPT: 8,
   CHECKIN: 3,
   HABIT: 1,
+  /** Первая заметка за день. Символически — мысль это не результат. */
+  NOTE_FIRST: 2,
 } as const;
 
+/** Каждые сколько рассылок за всё время отмечается веха. */
+export const MILESTONE_STEP = 25;
+
 // ---------------------------------------------------------------------------
-// Уровни. Пользователь никогда не видит полный список — только текущий
-// и тизер следующего, поэтому названия и пороги живут только здесь.
+// Уровни — двадцать ступеней.
+//
+// Кривая держит темп: первые ступени берутся за дни, средние за недели,
+// последние за месяцы. Полного списка пользователь не видит никогда —
+// открывается блоками по пять (см. revealCeiling).
+//
+// Пороги 1..6 неизменны с прошлой версии: понижать или повышать уже взятый
+// уровень нельзя, это обнуляет доверие к шкале.
 // ---------------------------------------------------------------------------
 export const LEVEL_THRESHOLDS = [
-  0, 300, 800, 1800, 3500, 6500, 12000, 22000, 40000,
+  0,       // 1
+  300,     // 2
+  800,     // 3
+  1_800,   // 4
+  3_500,   // 5
+  6_500,   // 6
+  10_000,  // 7
+  14_500,  // 8
+  20_000,  // 9
+  27_000,  // 10
+  35_500,  // 11
+  46_000,  // 12
+  58_500,  // 13
+  73_000,  // 14
+  90_000,  // 15
+  110_000, // 16
+  133_000, // 17
+  160_000, // 18
+  195_000, // 19
+  240_000, // 20
 ] as const;
 
-export const MAX_LEVEL = LEVEL_THRESHOLDS.length; // 9
+export const MAX_LEVEL = LEVEL_THRESHOLDS.length; // 20
+
+/** Уровни открываются блоками: взял пятый — увидел следующие пять. */
+export const REVEAL_BLOCK = 5;
 
 export type LevelInfo = {
   level: number;
@@ -64,7 +101,7 @@ export function getLevelInfo(totalXp: number, t: Dict): LevelInfo {
 
   return {
     level,
-    name: t.levels[level - 1] ?? t.levels[t.levels.length - 1],
+    name: levelName(level, t),
     floor,
     ceiling,
     progressPct: Math.max(0, Math.min(100, progressPct)),
@@ -73,19 +110,43 @@ export function getLevelInfo(totalXp: number, t: Dict): LevelInfo {
   };
 }
 
+/** Название уровня из словаря. За границей массива — последнее известное. */
+export function levelName(level: number, t: Dict): string {
+  return t.levels[level - 1] ?? t.levels[t.levels.length - 1];
+}
+
+/** Порог входа на уровень. */
+export function thresholdFor(level: number): number {
+  const index = Math.max(1, Math.min(MAX_LEVEL, level)) - 1;
+  return LEVEL_THRESHOLDS[index];
+}
+
 // ---------------------------------------------------------------------------
 // Что открывает каждый уровень.
 //
-// Тизер показывается только для следующего уровня и только до 7-го:
-// уровни 8 и 9 открываются без предупреждения.
+// Закрытых дверей без комнаты за ними быть не должно: каждый ключ ниже —
+// реально работающий раздел или правило игры, а не обещание.
 // ---------------------------------------------------------------------------
 export type FeatureKey =
-  | 'offers'      // уровень 2 — библиотека офферов
-  | 'niches'      // уровень 3 — аналитика по нишам
-  | 'speed'       // уровень 4 — счётчик скорости + «следующий шаг»
-  | 'project'     // уровень 5 — раздел «Проект»
-  | 'report'      // уровень 6 — еженедельный отчёт
-  | 'scale';      // уровень 7 — дашборд масштаба
+  | 'offers'       // 2  — библиотека офферов (+ разбор паттернов внутри)
+  | 'niches'       // 3  — аналитика по нишам
+  | 'speed'        // 4  — счётчик скорости + «следующий шаг»
+  | 'project'      // 5  — раздел «Проект»
+  | 'report'       // 6  — еженедельный отчёт
+  | 'scale'        // 7  — дашборд масштаба
+  | 'heatmap'      // 8  — тепловая карта дней
+  | 'prime'        // 9  — приоритетный список контактов
+  | 'achievements' // 10 — витрина достижений
+  | 'hourly'       // 11 — часы отклика
+  | 'compare'      // 12 — динамика недель
+  | 'doubleXp'     // 13 — перк: каждая 10-я рассылка дня ×2
+  | 'focus'        // 14 — режим фокуса на главной
+  | 'mentor'       // 15 — личный разбор воронки
+  | 'hall'         // 16 — зал славы
+  | 'themes'       // 17 — акценты интерфейса
+  | 'overdrive'    // 18 — вторая планка дня
+  | 'annual'       // 19 — годовой холст
+  | 'apex';        // 20 — всё открыто
 
 export const FEATURE_LEVEL: Record<FeatureKey, number> = {
   offers: 2,
@@ -94,24 +155,88 @@ export const FEATURE_LEVEL: Record<FeatureKey, number> = {
   project: 5,
   report: 6,
   scale: 7,
+  heatmap: 8,
+  prime: 9,
+  achievements: 10,
+  hourly: 11,
+  compare: 12,
+  doubleXp: 13,
+  focus: 14,
+  mentor: 15,
+  hall: 16,
+  themes: 17,
+  overdrive: 18,
+  annual: 19,
+  apex: 20,
 };
+
+/** Порядок = порядок уровней. Используется списком «что открыто». */
+export const FEATURE_ORDER = (Object.keys(FEATURE_LEVEL) as FeatureKey[]).sort(
+  (a, b) => FEATURE_LEVEL[a] - FEATURE_LEVEL[b],
+);
 
 /** Открыта ли фича на текущем уровне. */
 export function unlocked(feature: FeatureKey, level: number): boolean {
   return level >= FEATURE_LEVEL[feature];
 }
 
-/** Ключ фичи, которая откроется на данном уровне (для анимации повышения). */
+/** Ключ фичи, которая откроется на данном уровне. */
 export function featureAtLevel(level: number): FeatureKey | null {
-  const entry = (Object.keys(FEATURE_LEVEL) as FeatureKey[]).find(
-    (key) => FEATURE_LEVEL[key] === level,
-  );
-  return entry ?? null;
+  return FEATURE_ORDER.find((key) => FEATURE_LEVEL[key] === level) ?? null;
 }
 
-/** Тизер следующего уровня. null — если дальше тайна (уровни 8 и 9). */
+/** Тизер следующего уровня. null — уже максимум. */
 export function nextLevelTeaser(currentLevel: number): FeatureKey | null {
   return featureAtLevel(currentLevel + 1);
+}
+
+// ---------------------------------------------------------------------------
+// Постепенное раскрытие лестницы.
+//
+// Двадцать строк сразу — это список дел, а не игра: мозг видит объём и
+// заранее устаёт. Поэтому видно текущий блок из пяти, за ним туман. Взял
+// последний уровень блока — туман отступает ещё на пять.
+// ---------------------------------------------------------------------------
+
+/** До какого уровня включительно видно лестницу. */
+export function revealCeiling(level: number): number {
+  const safe = Math.max(1, Math.min(MAX_LEVEL, level || 1));
+  return Math.min(MAX_LEVEL, Math.ceil((safe + 1) / REVEAL_BLOCK) * REVEAL_BLOCK);
+}
+
+/** Сколько уровней ещё скрыто за туманом. */
+export function hiddenAhead(level: number): number {
+  return Math.max(0, MAX_LEVEL - revealCeiling(level));
+}
+
+export type LadderRow = {
+  level: number;
+  /** null — уровень ещё за туманом, показывается как «???». */
+  feature: FeatureKey | null;
+  threshold: number;
+  state: 'done' | 'current' | 'next' | 'locked' | 'hidden';
+};
+
+/**
+ * Строки лестницы для страницы прогресса.
+ *
+ * Возвращает ровно то, что можно показать: пройденные уровни, текущий,
+ * ближайшие открытые к показу и — если туман есть — ни строчкой больше.
+ */
+export function levelLadder(level: number): LadderRow[] {
+  const current = Math.max(1, Math.min(MAX_LEVEL, level || 1));
+  const ceiling = revealCeiling(current);
+
+  const rows: LadderRow[] = [];
+  for (let n = 1; n <= ceiling; n += 1) {
+    rows.push({
+      level: n,
+      feature: featureAtLevel(n),
+      threshold: thresholdFor(n),
+      state: n < current ? 'done' : n === current ? 'current' : n === current + 1 ? 'next' : 'locked',
+    });
+  }
+  return rows;
 }
 
 // ---------------------------------------------------------------------------
@@ -126,4 +251,14 @@ export const onceKey = {
   record: (date: string, count: number) => `record:${date}:${count}`,
   bonus: (date: string, step: number) => `bonus:${date}:${step}`,
   contactStatus: (contactId: string, status: string) => `contact:${contactId}:${status}`,
+  /** Веха по общему числу рассылок: 25, 50, 75… */
+  milestone: (total: number) => `milestone:${total}`,
+  /** Ровное число рассылок за конкретный день. */
+  roundDay: (date: string, count: number) => `round:${date}:${count}`,
+  /** Двойной удар — каждая 10-я рассылка дня. */
+  overdrive: (date: string, count: number) => `overdrive:${date}:${count}`,
+  /** Первая заметка дня. */
+  note: (date: string) => `note:${date}`,
+  /** Закрытое напоминание. */
+  reminder: (id: string) => `reminder:${id}`,
 };

@@ -13,6 +13,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useRouter } from 'next/navigation';
+import { applyAccent, readAccent } from '@/lib/accent';
 import { FirstEventOverlay, type FirstEventKind } from '@/components/overlays/FirstEventOverlay';
 import { LevelUpOverlay } from '@/components/overlays/LevelUpOverlay';
 import { QuotaClosedOverlay } from '@/components/overlays/QuotaClosedOverlay';
@@ -21,23 +22,39 @@ import { useLanguage } from '@/components/LanguageProvider';
 import { cycleDay, formatDayMonth, getLogicalDate, shiftDate } from '@/lib/date';
 import { celebrate } from '@/lib/feedback';
 import {
+  isReplyStatus,
   onOutreachAdded,
   onStatusChanged,
   type GameEvent,
   type OverlayKind,
 } from '@/lib/gamification';
 import { calculateQuota, daysUntilQuotaGrows, nextQuota, quotaPct, rollChain, rollQuotaForNewDay } from '@/lib/quota';
+import { showLocalNotification } from '@/lib/push-client';
+import { activeCount, isActive, nowLocal, urgencyOf } from '@/lib/reminders';
 import { createClient } from '@/lib/supabase/client';
 import { syncSheets } from '@/lib/sheets-client';
-import { featureAtLevel, getLevelInfo, levelForXp, type FeatureKey, type LevelInfo } from '@/lib/xp';
-import type {
-  ActivityEntry,
-  ActivityType,
-  ContactStatus,
-  DailyLog,
-  DailyTask,
-  OutreachContact,
-  Profile,
+import {
+  featureAtLevel,
+  getLevelInfo,
+  levelForXp,
+  onceKey,
+  REVEAL_BLOCK,
+  unlocked,
+  XP,
+  type FeatureKey,
+  type LevelInfo,
+} from '@/lib/xp';
+import {
+  normalizeStatus,
+  SENT_STATUSES,
+  type ActivityEntry,
+  type ActivityType,
+  type ContactStatus,
+  type DailyLog,
+  type DailyTask,
+  type OutreachContact,
+  type Profile,
+  type Reminder,
 } from '@/lib/types';
 
 /** Сколько дней истории держим в памяти. */
@@ -65,10 +82,19 @@ type QuotaState = {
   closed: boolean;
 };
 
+export type ReminderDraft = {
+  title: string;
+  note: string;
+  due_at: string;
+  contact_id: string | null;
+};
+
 type AppContextValue = {
   user: User | null;
   profile: Profile | null;
   today: string;
+  /** Текущий момент как 'YYYY-MM-DDTHH:mm'. Обновляется раз в минуту. */
+  now: string;
   loading: boolean;
   error: string | null;
 
@@ -78,10 +104,19 @@ type AppContextValue = {
   logs: DailyLog[];
   todayLog: DailyLog | null;
 
+  reminders: Reminder[];
+  /** false — таблица напоминаний ещё не создана (не прогнали migration-v5). */
+  remindersReady: boolean;
+  remindersDue: number;
+
   quota: QuotaState;
   chain: number;
   levelInfo: LevelInfo;
   cycleDayNumber: number;
+  /** Всего рассылок, дошедших до адресата, за всё время. */
+  sentTotal: number;
+  /** Открыта ли фича на текущем уровне. */
+  can: (feature: FeatureKey) => boolean;
 
   addContact: (draft: ContactDraft) => Promise<OutreachContact | null>;
   updateContact: (id: string, patch: Partial<OutreachContact>) => Promise<void>;
@@ -95,6 +130,11 @@ type AppContextValue = {
   addTask: (text: string) => Promise<void>;
   toggleTask: (id: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
+
+  addReminder: (draft: ReminderDraft) => Promise<Reminder | null>;
+  updateReminder: (id: string, patch: Partial<Reminder>) => Promise<void>;
+  toggleReminder: (id: string) => Promise<void>;
+  deleteReminder: (id: string) => Promise<void>;
 
   toggleHabit: (habitId: string) => Promise<void>;
   saveDay: (patch: Partial<DailyLog>) => Promise<void>;
@@ -138,16 +178,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [tasks, setTasks] = useState<DailyTask[]>([]);
   const [logs, setLogs] = useState<DailyLog[]>([]);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [remindersReady, setRemindersReady] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Оверлеи и тосты
   const [firstEvent, setFirstEvent] = useState<{ kind: FirstEventKind; xp: number } | null>(null);
   const [quotaOverlay, setQuotaOverlay] = useState<{ open: boolean; xp: number }>({ open: false, xp: 0 });
-  const [levelUp, setLevelUp] = useState<{ level: number; feature: FeatureKey | null } | null>(null);
+  const [levelUp, setLevelUp] = useState<
+    { level: number; feature: FeatureKey | null; revealed: boolean } | null
+  >(null);
   const [toast, setToast] = useState<ToastData | null>(null);
 
   const [today, setToday] = useState(() => getLogicalDate());
+  const [now, setNow] = useState(() => nowLocal());
 
   const languageApplied = useRef(false);
   const quotaRolled = useRef<string | null>(null);
@@ -178,7 +223,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const since = shiftDate(logicalToday, -HISTORY_DAYS);
     const dayStart = `${logicalToday}T00:00:00`;
 
-    const [profileRes, contactsRes, activityRes, tasksRes, logsRes] = await Promise.all([
+    const [profileRes, contactsRes, activityRes, tasksRes, logsRes, remindersRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', currentUser.id).maybeSingle(),
       supabase
         .from('outreach_contacts')
@@ -204,6 +249,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .eq('user_id', currentUser.id)
         .gte('date', since)
         .order('date', { ascending: false }),
+      // Напоминания появились в migration-v5. Пока её не прогнали, таблицы
+      // нет — это не ошибка приложения, а не выполненный шаг установки.
+      supabase
+        .from('reminders')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .order('due_at', { ascending: true }),
     ]);
 
     if (profileRes.error) {
@@ -230,10 +282,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     setProfile(loadedProfile);
-    setContacts((contactsRes.data as OutreachContact[]) ?? []);
+    // Статусы из базы могут быть старой шкалы («Отказ» до migration-v5) —
+    // приводим их сразу на входе, чтобы ниже по коду вариант был ровно один.
+    setContacts(
+      ((contactsRes.data as OutreachContact[]) ?? []).map((contact) => ({
+        ...contact,
+        status: normalizeStatus(contact.status),
+      })),
+    );
     setActivity((activityRes.data as ActivityEntry[]) ?? []);
     setTasks((tasksRes.data as DailyTask[]) ?? []);
     setLogs((logsRes.data as DailyLog[]) ?? []);
+
+    if (remindersRes.error) {
+      setRemindersReady(false);
+      setReminders([]);
+    } else {
+      setRemindersReady(true);
+      setReminders((remindersRes.data as Reminder[]) ?? []);
+    }
 
     if (!languageApplied.current && loadedProfile.language) {
       languageApplied.current = true;
@@ -246,6 +313,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Выбранный акцент живёт в localStorage — возвращаем его до первой отрисовки
+  // полос прогресса, иначе цвет моргает белым на каждой загрузке.
+  useEffect(() => {
+    applyAccent(readAccent());
+  }, []);
 
   useEffect(() => {
     const {
@@ -260,12 +333,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, [supabase, router]);
 
-  // Логический день может смениться прямо во время работы (в 4 утра).
+  // Логический день может смениться прямо во время работы (в 4 утра),
+  // а минутная стрелка двигает напоминания — обе даты тикают вместе.
   useEffect(() => {
     const timer = setInterval(() => {
       const current = getLogicalDate();
       setToday((previous) => (previous === current ? previous : current));
-    }, 60_000);
+
+      const stamp = nowLocal();
+      setNow((previous) => (previous === stamp ? previous : stamp));
+    }, 30_000);
     return () => clearInterval(timer);
   }, []);
 
@@ -309,7 +386,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       );
 
       if (result.level > previousLevel) {
-        setLevelUp({ level: result.level, feature: featureAtLevel(result.level) });
+        setLevelUp({
+          level: result.level,
+          feature: featureAtLevel(result.level),
+          // Взял последний уровень блока — туман отступил ещё на пять.
+          revealed: result.level % REVEAL_BLOCK === 0,
+        });
       }
 
       return result.awarded;
@@ -380,7 +462,59 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [profile?.current_quota, profile?.quota_streak, profile?.daily_record, sentToday]);
 
+  /** Дошедшие до адресата рассылки за всё время — база для вех. */
+  const sentTotal = useMemo(
+    () => contacts.filter((c) => SENT_STATUSES.includes(c.status)).length,
+    [contacts],
+  );
+
   const levelInfo = useMemo(() => getLevelInfo(profile?.total_xp ?? 0, t), [profile?.total_xp, t]);
+
+  const can = useCallback(
+    (feature: FeatureKey) => unlocked(feature, levelInfo.level),
+    [levelInfo.level],
+  );
+
+  const remindersDue = useMemo(() => activeCount(reminders, now), [reminders, now]);
+
+  /**
+   * Напоминание, время которого наступило прямо сейчас.
+   *
+   * При первой загрузке ничего не показываем: старые просроченные задачи
+   * выстрелили бы пачкой тостов и обесценили механику. Они и так видны
+   * в списке. Сигналим только о переходе «ещё рано → уже пора».
+   */
+  const notifiedReminders = useRef<Set<string> | null>(null);
+
+  useEffect(() => {
+    if (!remindersReady || loading) return;
+
+    // День здесь календарный (внутри urgencyOf по умолчанию), а не логический:
+    // на срабатывание это не влияет — «пора» и «просрочено» одинаково активны.
+    const active = reminders.filter(
+      (reminder) => !reminder.done && isActive(urgencyOf(reminder, now)),
+    );
+
+    // Первый проход только запоминает состояние.
+    if (notifiedReminders.current === null) {
+      notifiedReminders.current = new Set(active.map((reminder) => reminder.id));
+      return;
+    }
+
+    for (const reminder of active) {
+      if (notifiedReminders.current.has(reminder.id)) continue;
+      notifiedReminders.current.add(reminder.id);
+
+      setToast({
+        id: Date.now() + Math.random(),
+        text: `⏰ ${reminder.title}`,
+        tone: 'round',
+      });
+      setTimeout(() => setToast(null), 4000);
+
+      void showLocalNotification(t.reminders.notificationTitle, reminder.title);
+    }
+  }, [reminders, now, remindersReady, loading, t.reminders.notificationTitle]);
 
   const cycleDayNumber = useMemo(
     () => (profile ? cycleDay(profile.cycle_start_date, today) : 1),
@@ -434,10 +568,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
           return tf(t.outreach.toastRecord, { n: vars?.n ?? 0 });
         case 'round':
           return tf(t.outreach.toastRound, { n: vars?.n ?? 0 });
+        case 'milestone':
+          return tf(t.outreach.toastMilestone, { n: vars?.n ?? 0 });
         case 'added':
           return `+${vars?.n ?? 0} XP · ${t.outreach.toastAdded}`;
         case 'replied':
           return `+${vars?.n ?? 0} XP · ${t.xpReasons.replied}`;
+        case 'repliedNo':
+          return `+${vars?.n ?? 0} XP · ${t.outreach.toastRepliedNo}`;
         case 'call':
           return `+${vars?.n ?? 0} XP · ${t.xpReasons.call}`;
         case 'closed':
@@ -515,7 +653,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return null;
       }
 
-      const contact = data as OutreachContact;
+      const contact = { ...(data as OutreachContact), status: normalizeStatus(data.status) };
       setContacts((previous) => [contact, ...previous]);
 
       // Текст рассылки сразу уходит в библиотеку офферов и привязывается к
@@ -548,6 +686,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             record: quota.record,
             date: today,
             awardedBonusSteps: [],
+            // sentTotal посчитан до вставки — это и есть «было до».
+            totalBefore: sentTotal,
+            doubleXp: unlocked('doubleXp', levelInfo.level),
           }),
         );
 
@@ -565,7 +706,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       void syncSheets();
       return contact;
     },
-    [supabase, user, today, sentToday, quota.quota, quota.record, logActivity, runEvents, profile, updateProfile],
+    [
+      supabase, user, today, sentToday, sentTotal, quota.quota, quota.record, levelInfo.level,
+      logActivity, runEvents, profile, updateProfile,
+    ],
   );
 
   const setStatus = useCallback(
@@ -573,15 +717,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (contact.status === status) return;
       if (!profile) return;
 
-      const now = new Date().toISOString();
-      const history = [...(contact.status_history ?? []), { status, at: now }];
+      const nowIso = new Date().toISOString();
+      const history = [...(contact.status_history ?? []), { status, at: nowIso }];
 
       const patch: Partial<OutreachContact> = { status, status_history: history };
-      // Момент первого ответа нужен счётчику скорости (уровень 4).
-      if (status === 'replied' && !contact.replied_at) patch.replied_at = now;
+      // Момент первого ответа нужен счётчику скорости (уровень 4). Отказ
+      // словами — это тоже ответ, и скорость по нему считается так же.
+      if (isReplyStatus(status) && !contact.replied_at) patch.replied_at = nowIso;
 
       setContacts((previous) =>
-        previous.map((c) => (c.id === contact.id ? { ...c, ...patch, updated_at: now } : c)),
+        previous.map((c) => (c.id === contact.id ? { ...c, ...patch, updated_at: nowIso } : c)),
       );
 
       const { error: updateError } = await supabase
@@ -594,7 +739,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (status === 'replied' || status === 'call' || status === 'closed') {
+      // «Ответил — отказ» попадает в ленту как ответ: событие ленты — это
+      // факт «человек откликнулся», а не оценка исхода.
+      if (isReplyStatus(status)) {
+        await logActivity('replied', { name: contact.name, niche: contact.niche });
+      } else if (status === 'call' || status === 'closed') {
         await logActivity(status, { name: contact.name, niche: contact.niche });
       }
 
@@ -721,6 +870,93 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   /* ------------------------------------------------------------------ */
+  /*  Напоминания                                                        */
+  /* ------------------------------------------------------------------ */
+
+  const addReminder = useCallback(
+    async (draft: ReminderDraft): Promise<Reminder | null> => {
+      if (!user || !draft.title.trim() || !draft.due_at) return null;
+
+      const { data, error: insertError } = await supabase
+        .from('reminders')
+        .insert({
+          user_id: user.id,
+          title: draft.title.trim(),
+          note: draft.note.trim() || null,
+          due_at: draft.due_at,
+          contact_id: draft.contact_id,
+          done: false,
+        } as never)
+        .select('*')
+        .single();
+
+      if (insertError) {
+        // Таблицы может не быть, если migration-v5 ещё не прогнали.
+        setRemindersReady(false);
+        setError(humanError(insertError.message));
+        return null;
+      }
+
+      const reminder = data as Reminder;
+      setReminders((previous) =>
+        [...previous, reminder].sort((a, b) => a.due_at.localeCompare(b.due_at)),
+      );
+      return reminder;
+    },
+    [supabase, user],
+  );
+
+  const updateReminder = useCallback(
+    async (id: string, patch: Partial<Reminder>) => {
+      setReminders((previous) =>
+        previous
+          .map((r) => (r.id === id ? { ...r, ...patch } : r))
+          .sort((a, b) => a.due_at.localeCompare(b.due_at)),
+      );
+      const { error: updateError } = await supabase
+        .from('reminders')
+        .update(patch as never)
+        .eq('id', id);
+      if (updateError) setError(humanError(updateError.message));
+    },
+    [supabase],
+  );
+
+  /**
+   * Закрытие напоминания.
+   *
+   * XP символический и один раз на напоминание: иначе можно было бы
+   * штамповать задачи «встать со стула» и качать уровень мимо рассылок.
+   */
+  const toggleReminder = useCallback(
+    async (id: string) => {
+      const reminder = reminders.find((r) => r.id === id);
+      if (!reminder) return;
+
+      const done = !reminder.done;
+      await updateReminder(id, { done });
+
+      if (done) {
+        const key = onceKey.reminder(id);
+        if (!attemptedKeys.current.has(key)) {
+          attemptedKeys.current.add(key);
+          await awardXp(XP.NOTE_FIRST, 'reminder', key);
+        }
+      }
+    },
+    [reminders, updateReminder, awardXp],
+  );
+
+  const deleteReminder = useCallback(
+    async (id: string) => {
+      setReminders((previous) => previous.filter((r) => r.id !== id));
+      const { error: deleteError } = await supabase.from('reminders').delete().eq('id', id);
+      if (deleteError) setError(humanError(deleteError.message));
+    },
+    [supabase],
+  );
+
+  /* ------------------------------------------------------------------ */
   /*  День: привычки, чекин, питание                                     */
   /* ------------------------------------------------------------------ */
 
@@ -839,6 +1075,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       user,
       profile,
       today,
+      now,
       loading,
       error,
       contacts,
@@ -846,10 +1083,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       tasks,
       logs,
       todayLog,
+      reminders,
+      remindersReady,
+      remindersDue,
       quota,
       chain: profile?.chain_days ?? 0,
       levelInfo,
       cycleDayNumber,
+      sentTotal,
+      can,
       addContact,
       updateContact,
       setStatus,
@@ -859,6 +1101,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addTask,
       toggleTask,
       deleteTask,
+      addReminder,
+      updateReminder,
+      toggleReminder,
+      deleteReminder,
       toggleHabit,
       saveDay,
       submitModeCheckin,
@@ -868,10 +1114,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       signOut,
     }),
     [
-      user, profile, today, loading, error, contacts, activity, tasks, logs, todayLog,
-      quota, levelInfo, cycleDayNumber, addContact, updateContact, setStatus, deleteContact, touchContact, muteContact,
-      addTask, toggleTask, deleteTask, toggleHabit, saveDay, submitModeCheckin,
-      updateProfile, awardXp, load, signOut,
+      user, profile, today, now, loading, error, contacts, activity, tasks, logs, todayLog,
+      reminders, remindersReady, remindersDue, quota, levelInfo, cycleDayNumber, sentTotal, can,
+      addContact, updateContact, setStatus, deleteContact, touchContact, muteContact,
+      addTask, toggleTask, deleteTask, addReminder, updateReminder, toggleReminder, deleteReminder,
+      toggleHabit, saveDay, submitModeCheckin, updateProfile, awardXp, load, signOut,
     ],
   );
 
@@ -914,6 +1161,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       <LevelUpOverlay
         level={levelUp?.level ?? null}
         featureKey={levelUp?.feature ?? null}
+        revealed={levelUp?.revealed ?? false}
         onDismiss={() => setLevelUp(null)}
       />
     </AppContext.Provider>
@@ -924,4 +1172,15 @@ export function useApp(): AppContextValue {
   const ctx = useContext(AppContext);
   if (!ctx) throw new Error('useApp must be used inside <AppProvider>');
   return ctx;
+}
+
+/**
+ * То же самое, но без падения вне провайдера.
+ *
+ * Нужно навигации: она рисуется и на витрине компонентов (/auth/preview),
+ * где никакого провайдера нет. Значок непрочитанных напоминаний там просто
+ * не появится — это лучше, чем белый экран.
+ */
+export function useAppOptional(): AppContextValue | null {
+  return useContext(AppContext);
 }

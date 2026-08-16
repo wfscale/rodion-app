@@ -17,6 +17,8 @@ type OutreachCounterProps = {
   daysToGrow: number;
   /** Какой станет квота после следующего роста. */
   nextQuota: number;
+  /** Овердрайв (18-й уровень): вторая, двойная планка дня. */
+  showOverdrive?: boolean;
 };
 
 /**
@@ -31,6 +33,7 @@ export function OutreachCounter({
   record,
   daysToGrow,
   nextQuota,
+  showOverdrive = false,
 }: OutreachCounterProps) {
   const { t, tf } = useLanguage();
 
@@ -38,6 +41,12 @@ export function OutreachCounter({
   const done = sent >= quota;
   // 80%+ — бар начинает мягко пульсировать: «ты почти там».
   const nearGoal = !done && pct >= 80;
+
+  // Овердрайв появляется только после закрытой квоты: до неё вторая планка
+  // отвлекала бы от первой.
+  const overdriveTarget = quota * 2;
+  const overdrivePct = quotaPct(sent, overdriveTarget);
+  const overdriveDone = sent >= overdriveTarget;
 
   return (
     <GlassCard className="p-6">
@@ -87,6 +96,25 @@ export function OutreachCounter({
           {pct}%
         </span>
       </motion.div>
+
+      {showOverdrive && done && (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="mt-3"
+        >
+          <div className="mb-1.5 flex items-baseline justify-between gap-3">
+            <span className="text-xs font-bold uppercase tracking-wide text-warn">
+              {tf(t.overdrive.label, { n: overdriveTarget })}
+            </span>
+            <span className="text-xs tabular-nums text-white/35">
+              {overdriveDone ? t.overdrive.done : `${sent} / ${overdriveTarget}`}
+            </span>
+          </div>
+          <ProgressBar pct={overdrivePct} color="#FFD166" height={6} />
+        </motion.div>
+      )}
 
       {done && (
         <motion.p

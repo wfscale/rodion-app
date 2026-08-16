@@ -6,7 +6,8 @@ import { useLanguage } from '@/components/LanguageProvider';
 import { statusTone, telegramUrl } from '@/components/outreach/ContactSheet';
 import { Badge, EmptyState } from '@/components/ui';
 import { daysBetween, getLogicalDate } from '@/lib/date';
-import type { OutreachContact } from '@/lib/types';
+import { followUpState, needsTouch } from '@/lib/followup';
+import { NEGATIVE_STATUSES, normalizeStatus, type OutreachContact } from '@/lib/types';
 
 /**
  * Дней с касания не хранится в базе — считается каждый раз при рендере,
@@ -45,6 +46,21 @@ export function ContactCards({
         const n = daysSince(contact.first_contact_date);
         const fresh = contact.id === highlightId;
 
+        // Ровно те же два сигнала, что и в таблице: красный — дверь закрылась,
+        // жёлтый — сегодня пора коснуться.
+        const negative = NEGATIVE_STATUSES.includes(normalizeStatus(contact.status));
+        const due =
+          !negative &&
+          needsTouch(
+            followUpState({
+              status: contact.status,
+              lastTouchAt: contact.last_touch_at,
+              touchCount: contact.touch_count ?? 1,
+              muted: Boolean(contact.muted),
+              today: getLogicalDate(),
+            }),
+          );
+
         return (
           <motion.div
             key={contact.id}
@@ -75,7 +91,13 @@ export function ContactCards({
               ease: [0.22, 1, 0.36, 1],
               boxShadow: { duration: 1, ease: 'linear' },
             }}
-            className="glass cursor-pointer p-4 active:scale-[0.99]"
+            className={`glass cursor-pointer border-l-2 p-4 active:scale-[0.99] ${
+              negative
+                ? 'border-l-[#FF6B6B] bg-[rgba(255,107,107,0.07)]'
+                : due
+                  ? 'border-l-[#FFD166]'
+                  : 'border-l-transparent'
+            }`}
           >
             <div className="flex items-start gap-3">
               <div className="min-w-0 flex-1">

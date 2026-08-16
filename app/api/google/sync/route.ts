@@ -19,7 +19,8 @@ const STATUS_LABELS: Record<string, string> = {
   read: 'Прочитал',
   replied: 'Ответил',
   replied_no: 'Ответил — отказ',
-  refused: 'Отказ',
+  // Статус старой шкалы: в базе он мог остаться до migration-v5.
+  refused: 'Ответил — отказ',
   blocked: 'Заблокировал',
   call: 'Созвон',
   closed: 'Закрыт',

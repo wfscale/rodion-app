@@ -1,7 +1,8 @@
 'use client';
 
-import { motion } from 'framer-motion';
-import { Plus } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { ChevronDown, Plus } from 'lucide-react';
+import { useEffect, useId, useState } from 'react';
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react';
 
 /* -------------------------------------------------------------------------- */
@@ -235,6 +236,112 @@ export function FilterChips<T extends string>({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Сворачиваемые блоки                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Состояние, переживающее перезагрузку.
+ *
+ * Свернул раздел — он должен остаться свёрнутым и завтра. Иначе сворачивание
+ * это не настройка экрана, а разовый жест, который приходится повторять.
+ * Читается только в эффекте: на сервере localStorage нет, и расхождение
+ * первого рендера сломало бы гидратацию.
+ */
+export function useStickyState(key: string, fallback: boolean): [boolean, (value: boolean) => void] {
+  const [value, setValue] = useState(fallback);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(key);
+      if (stored === '1' || stored === '0') setValue(stored === '1');
+    } catch {
+      // приватный режим — просто живём с умолчанием
+    }
+  }, [key]);
+
+  const update = (next: boolean) => {
+    setValue(next);
+    try {
+      window.localStorage.setItem(key, next ? '1' : '0');
+    } catch {
+      // см. выше
+    }
+  };
+
+  return [value, update];
+}
+
+type CollapsibleProps = {
+  title: ReactNode;
+  /** Что показать справа в шапке — счётчик, бейдж, кнопка. */
+  right?: ReactNode;
+  /** Ключ в localStorage; без него состояние живёт только до перезагрузки. */
+  storageKey?: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+  className?: string;
+};
+
+/**
+ * Заголовок-переключатель со скрываемым содержимым.
+ *
+ * Нужен там, где длинный список отодвигает вниз то, ради чего на страницу
+ * заходят. Свёрнутый блок обязан оставаться видимым и осмысленным — поэтому
+ * счётчик и подпись живут в шапке, а не внутри.
+ */
+export function Collapsible({
+  title,
+  right,
+  storageKey,
+  defaultOpen = true,
+  children,
+  className = '',
+}: CollapsibleProps) {
+  // Без явного ключа состояние привязывается к экземпляру: два блока без
+  // ключа не должны сворачиваться и разворачиваться вместе.
+  const fallbackKey = useId();
+  const [open, setOpen] = useStickyState(storageKey ?? `collapsible:${fallbackKey}`, defaultOpen);
+
+  return (
+    <div className={className}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          aria-expanded={open}
+          className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          <motion.span
+            animate={{ rotate: open ? 0 : -90 }}
+            transition={{ duration: 0.2 }}
+            className="shrink-0 text-white/40"
+          >
+            <ChevronDown size={16} />
+          </motion.span>
+          <h2 className="truncate text-sm font-bold tracking-wide text-white">{title}</h2>
+        </button>
+        {right}
+      </div>
+
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            key="body"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+            className="overflow-hidden"
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

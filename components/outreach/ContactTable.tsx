@@ -24,8 +24,11 @@ import {
 import { useColumnWidths, type ColumnWidths } from '@/components/outreach/useColumnWidths';
 import { Badge } from '@/components/ui';
 import { daysBetween, formatShortDate, getLogicalDate } from '@/lib/date';
+import { followUpState, needsTouch } from '@/lib/followup';
 import {
   CONTACT_STATUSES,
+  NEGATIVE_STATUSES,
+  normalizeStatus,
   type ContactStatus,
   type OutreachContact,
 } from '@/lib/types';
@@ -363,17 +366,28 @@ export function ContactTable({
     else onSortChange({ key, dir: key === 'date' ? 'desc' : 'asc' });
   }
 
-  function bodyCell(key: ColumnKey, children: React.ReactNode) {
+  function bodyCell(key: ColumnKey, children: React.ReactNode, tint: RowTint | null = null) {
     const pinned = PINNED.includes(key);
+
     return (
       <td
         key={key}
         style={{ '--sl': `${pinnedOffsets[key] ?? 0}px` } as CSSProperties}
-        className={`border-b border-divider px-3 align-middle ${
+        className={[
+          'border-b border-divider px-3 align-middle',
+          tint?.cell ?? '',
+          // Прилипающие колонки на телефоне обязаны быть непрозрачными, иначе
+          // под ними просвечивает уезжающий текст. Поэтому у подсвеченной
+          // строки им нужен свой непрозрачный фон того же оттенка.
           pinned
-            ? 'max-md:sticky max-md:left-[var(--sl)] max-md:z-10 max-md:bg-ink max-md:group-hover:bg-[#141414]'
-            : ''
-        }`}
+            ? `max-md:sticky max-md:left-[var(--sl)] max-md:z-10 ${
+                tint?.pinned ?? 'max-md:bg-ink max-md:group-hover:bg-[#141414]'
+              }`
+            : '',
+          key === 'num' && tint?.bar ? `border-l-2 ${tint.bar}` : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
       >
         {children}
       </td>
@@ -527,6 +541,7 @@ export function ContactTable({
 
             {rows.map((contact) => {
               const fresh = contact.id === highlightId;
+              const tint = rowTint(contact, today);
               return (
                 <motion.tr
                   key={contact.id}
@@ -551,7 +566,9 @@ export function ContactTable({
                     backgroundColor: { duration: 1, ease: 'linear' },
                   }}
                 >
-                  {columns.map((column) => bodyCell(column.key, cellContent(contact, column.key)))}
+                  {columns.map((column) =>
+                    bodyCell(column.key, cellContent(contact, column.key), tint),
+                  )}
                 </motion.tr>
               );
             })}
@@ -622,6 +639,54 @@ export function ContactTable({
       )}
     </div>
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Подсветка строк                                                            */
+/* -------------------------------------------------------------------------- */
+
+type RowTint = {
+  /** Классы фона ячейки. */
+  cell: string;
+  /** Непрозрачный фон для прилипающих колонок на телефоне. */
+  pinned: string;
+  /** Цвет полосы слева. */
+  bar: string;
+};
+
+/**
+ * Два состояния, которые нужно видеть боковым зрением.
+ *
+ * Красный — исход отрицательный, работа с человеком окончена: «Ответил —
+ * отказ» и «Заблокировал». Жёлтая полоса — сегодня пора коснуться. Всё
+ * остальное остаётся нейтральным: если подсвечивать всё, не видно ничего.
+ */
+function rowTint(contact: OutreachContact, today: string): RowTint | null {
+  if (NEGATIVE_STATUSES.includes(normalizeStatus(contact.status))) {
+    return {
+      cell: 'bg-[rgba(255,107,107,0.07)]',
+      pinned: 'max-md:bg-[#1B0E0E] max-md:group-hover:bg-[#241313]',
+      bar: 'border-l-[#FF6B6B]',
+    };
+  }
+
+  const state = followUpState({
+    status: contact.status,
+    lastTouchAt: contact.last_touch_at,
+    touchCount: contact.touch_count ?? 1,
+    muted: Boolean(contact.muted),
+    today,
+  });
+
+  if (needsTouch(state)) {
+    return {
+      cell: '',
+      pinned: 'max-md:bg-ink max-md:group-hover:bg-[#141414]',
+      bar: 'border-l-[#FFD166]',
+    };
+  }
+
+  return null;
 }
 
 /* -------------------------------------------------------------------------- */

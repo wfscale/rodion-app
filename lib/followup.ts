@@ -12,19 +12,26 @@ import type { ContactStatus } from '@/lib/types';
  * настойчивость, а не как навязчивость.
  */
 
-/** Шаги каскада для тех, кто молчит: 1 → 3 → 7 → 15 → 30 дней. */
-export const SILENT_STEPS = [1, 3, 7, 15, 30] as const;
+/** Шаги каскада: 1 → 3 → 7 → 15 → 30 дней. */
+export const TOUCH_STEPS = [1, 3, 7, 15, 30] as const;
 
-/** Диалог начался, но замер — напомнить через столько дней. */
-export const REPLIED_IDLE_DAYS = 3;
+/** Прежнее имя каскада — оставлено, чтобы не плодить два списка чисел. */
+export const SILENT_STEPS = TOUCH_STEPS;
 
 /** Созвон назначен — напомнить за день. */
 export const CALL_REMINDER_DAYS = 1;
 
 export type FollowUpUrgency = 'none' | 'soon' | 'due' | 'overdue' | 'cold';
 
+/**
+ * Почему человек в списке. Формулировка касания зависит от того, молчал он
+ * вообще или ответил и пропал: это разные письма.
+ */
+export type FollowUpReason = 'silent' | 'replied' | 'call' | 'none';
+
 export type FollowUpState = {
   urgency: FollowUpUrgency;
+  reason: FollowUpReason;
   /** Через сколько дней наступит следующее касание. Отрицательное — просрочено. */
   daysUntil: number;
   /** Сколько дней прошло с последнего касания. */
@@ -33,24 +40,50 @@ export type FollowUpState = {
   nextTouchNumber: number;
 };
 
-/** Статусы, по которым напоминания не нужны вовсе. */
-// Заблокировавшему писать некуда — это худший исход и конец истории.
-const SILENT_IGNORED: ContactStatus[] = ['not_sent', 'refused', 'replied_no', 'blocked', 'closed'];
+/**
+ * Статусы, по которым напоминаний нет вовсе.
+ *
+ * «Ответил — отказ» здесь потому, что человек уже сказал «нет» словами:
+ * дожимать после явного отказа — это спам, а не настойчивость. Заблокировавшему
+ * писать физически некуда, закрытый уже клиент.
+ */
+const NO_FOLLOWUP: ContactStatus[] = ['not_sent', 'replied_no', 'blocked', 'closed'];
+
+/**
+ * Статусы, которые ведут по каскаду 1/3/7/15/30.
+ *
+ * «Ответил» в этом списке намеренно: люди отвечают что-то вежливое и уходят
+ * в игнор. Такой контакт теплее холодного и стоит дожима больше всех
+ * остальных — тут разговор уже начат.
+ */
+const CASCADE_STATUSES: ContactStatus[] = ['sent', 'read', 'replied'];
+
+/** Ведёт ли статус по каскаду касаний. */
+export function isCascadeStatus(status: ContactStatus): boolean {
+  return CASCADE_STATUSES.includes(status);
+}
+
+/** Почему контакт вообще требует касания. */
+export function reasonFor(status: ContactStatus): FollowUpReason {
+  if (status === 'call') return 'call';
+  if (status === 'replied') return 'replied';
+  if (status === 'sent' || status === 'read') return 'silent';
+  return 'none';
+}
 
 /**
  * Через сколько дней после последнего касания пора писать снова.
  * null — по этому статусу напоминания не предусмотрены.
  */
 export function intervalFor(status: ContactStatus, touchCount: number): number | null {
-  if (SILENT_IGNORED.includes(status)) return null;
+  if (NO_FOLLOWUP.includes(status)) return null;
 
   if (status === 'call') return CALL_REMINDER_DAYS;
-  if (status === 'replied') return REPLIED_IDLE_DAYS;
 
-  // sent / read — молчат. Шаг каскада зависит от числа уже сделанных касаний.
+  // sent / read / replied — шаг каскада зависит от числа сделанных касаний.
   const index = Math.max(0, touchCount - 1);
-  if (index >= SILENT_STEPS.length) return null; // каскад исчерпан
-  return SILENT_STEPS[index];
+  if (index >= TOUCH_STEPS.length) return null; // каскад исчерпан
+  return TOUCH_STEPS[index];
 }
 
 /**
@@ -75,6 +108,7 @@ export function followUpState(input: {
   const daysSinceTouch = lastTouchAt ? Math.max(0, daysBetween(today, lastTouchAt)) : 0;
   const base: FollowUpState = {
     urgency: 'none',
+    reason: reasonFor(status),
     daysUntil: 0,
     daysSinceTouch,
     nextTouchNumber: (touchCount || 1) + 1,
@@ -84,9 +118,9 @@ export function followUpState(input: {
 
   const interval = intervalFor(status, touchCount || 1);
 
-  // Каскад исчерпан только у молчащих: с ними больше делать нечего.
+  // Каскад исчерпан только у тех, кого он вёл: с остальными делать нечего.
   if (interval === null) {
-    const exhausted = (status === 'sent' || status === 'read') && touchCount > SILENT_STEPS.length;
+    const exhausted = isCascadeStatus(status) && touchCount > TOUCH_STEPS.length;
     return { ...base, urgency: exhausted ? 'cold' : 'none' };
   }
 

@@ -86,6 +86,39 @@ export async function subscribeToPush(vapidPublicKey: string): Promise<
   return response.ok ? { ok: true } : { ok: false, reason: 'failed' };
 }
 
+/**
+ * Локальное уведомление прямо из вкладки.
+ *
+ * Нужно напоминаниям: их время наступает, пока приложение открыто, и гонять
+ * ради этого сервер с web-push бессмысленно. Если разрешения нет — молча
+ * ничего не делаем: тост в интерфейсе всё равно покажется.
+ */
+export async function showLocalNotification(title: string, body: string): Promise<void> {
+  if (typeof window === 'undefined') return;
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+  try {
+    // Через service worker — на Android и в установленном PWA обычный
+    // конструктор Notification не работает.
+    if ('serviceWorker' in navigator) {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration) {
+        await registration.showNotification(title, {
+          body,
+          icon: '/icon-192.png',
+          badge: '/icon-192.png',
+          tag: 'rodion-reminder',
+          data: { url: '/notes' },
+        });
+        return;
+      }
+    }
+    new Notification(title, { body, icon: '/icon-192.png' });
+  } catch {
+    // Уведомление — приятное дополнение, ронять из-за него ничего нельзя.
+  }
+}
+
 export async function unsubscribeFromPush(): Promise<void> {
   if (!('serviceWorker' in navigator)) return;
 

@@ -5,7 +5,7 @@ import { useLanguage } from '@/components/LanguageProvider';
 import { statusTone } from '@/components/outreach/ContactSheet';
 import { Badge } from '@/components/ui';
 import { formatDateTime } from '@/lib/date';
-import type { Offer } from '@/lib/types';
+import { normalizeStatus, type Offer } from '@/lib/types';
 
 
 export function OfferCard({
@@ -18,6 +18,8 @@ export function OfferCard({
   index?: number;
 }) {
   const { t, lang } = useLanguage();
+  // Результат зеркалит статус контакта и мог остаться в старой шкале.
+  const result = normalizeStatus(offer.result);
 
   return (
     <motion.button
@@ -37,7 +39,7 @@ export function OfferCard({
           )}
         </div>
 
-        <Badge tone={statusTone(offer.result)}>{t.statuses[offer.result]}</Badge>
+        <Badge tone={statusTone(result)}>{t.statuses[result]}</Badge>
       </div>
 
       <p className="mt-2 line-clamp-2 text-sm leading-snug text-white/45">

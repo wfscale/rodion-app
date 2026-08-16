@@ -5,6 +5,12 @@
 @layer base {
   :root {
     color-scheme: dark;
+    /*
+     * Акцент интерфейса. По умолчанию белый — приложение монохромное, и
+     * цвет здесь появляется только если его выбрали сами (перк 17-го уровня).
+     * Меняется одной строкой из lib/accent.ts, перерисовки React не требует.
+     */
+    --accent: #ffffff;
   }
 
   html {
@@ -139,6 +145,15 @@
 
   .btn-ghost:hover {
     background: rgba(255, 255, 255, 0.1);
+  }
+
+  /* Элементы, которые слушают акцентный цвет. */
+  .bg-accent-var {
+    background-color: var(--accent);
+  }
+
+  .text-accent-var {
+    color: var(--accent);
   }
 
   /* Подпись раздела */

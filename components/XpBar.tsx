@@ -21,8 +21,10 @@ export function XpBar({ pct, className = '', height = 6 }: XpBarProps) {
       aria-valuemin={0}
       aria-valuemax={100}
     >
+      {/* Полоса опыта — единственный элемент, который красится акцентом
+          всегда: это личный прогресс, и он вправе выглядеть по-своему. */}
       <motion.div
-        className="h-full rounded-full bg-white"
+        className="bg-accent-var h-full rounded-full"
         initial={{ width: 0 }}
         animate={{ width: `${safe}%` }}
         transition={{ type: 'spring', stiffness: 110, damping: 22 }}

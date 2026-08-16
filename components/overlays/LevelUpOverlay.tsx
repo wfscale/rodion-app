@@ -5,13 +5,12 @@ import { useLanguage } from '@/components/LanguageProvider';
 import type { FeatureKey } from '@/lib/xp';
 
 type LevelUpOverlayProps = {
-  /** null — оверлей скрыт. Номер достигнутого уровня, 1..9. */
+  /** null — оверлей скрыт. Номер достигнутого уровня, 1..20. */
   level: number | null;
-  /**
-   * Что открылось на этом уровне. null — уровни 8 и 9: по ТЗ §4 они
-   * открываются без анонса, показываем только номер и название.
-   */
+  /** Что открылось на этом уровне. null — уровень без новой фичи. */
   featureKey: FeatureKey | null;
+  /** Взят последний уровень блока: на лестнице проявились ещё пять ступеней. */
+  revealed?: boolean;
   onDismiss: () => void;
 };
 
@@ -21,7 +20,12 @@ type LevelUpOverlayProps = {
  * Таймера автозакрытия нет намеренно: экран сообщает о новом функционале,
  * его нужно успеть прочитать. Закрывается тапом в любом месте или кнопкой.
  */
-export function LevelUpOverlay({ level, featureKey, onDismiss }: LevelUpOverlayProps) {
+export function LevelUpOverlay({
+  level,
+  featureKey,
+  revealed = false,
+  onDismiss,
+}: LevelUpOverlayProps) {
   const { t } = useLanguage();
 
   // Названия уровней живут только в словаре; за границей массива берём последнее.
@@ -100,6 +104,19 @@ export function LevelUpOverlay({ level, featureKey, onDismiss }: LevelUpOverlayP
                 </p>
                 <p className="mt-2 text-xl font-extrabold text-white">{unlock.feature}</p>
               </motion.div>
+            )}
+
+            {/* Отступивший туман — отдельное событие: открылась не только
+                фича, но и вид на следующие пять ступеней. */}
+            {revealed && (
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.6, delay: unlock ? 1.45 : 0.9 }}
+                className="mt-8 text-sm font-semibold text-warn"
+              >
+                {t.levelUp.revealed}
+              </motion.p>
             )}
 
             <motion.button
