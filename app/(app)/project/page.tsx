@@ -77,20 +77,23 @@ export default function ProjectPage() {
 
   if (app.loading || !app.profile) return <FullPageLoader />;
 
-  return (
-    <div className="space-y-4">
-      <PageTitle>{t.project.title}</PageTitle>
-
-      {unlocked('project', app.levelInfo.level) ? (
-        <ProjectView
-          projects={projects}
-          onSave={(draft) => void save(draft)}
-          onToggleStage={(pid, sid) => void toggleStage(pid, sid)}
-          onDelete={(id) => void remove(id)}
-        />
-      ) : (
+  // Заголовок рисует ProjectView — вместе с кнопкой «новый проект» в его
+  // правом углу. Второй такой же здесь давал два слова «Проект» подряд.
+  if (!unlocked('project', app.levelInfo.level)) {
+    return (
+      <div className="space-y-4">
+        <PageTitle>{t.project.title}</PageTitle>
         <LockedFeature featureKey="project" requiredLevel={FEATURE_LEVEL.project} />
-      )}
-    </div>
+      </div>
+    );
+  }
+
+  return (
+    <ProjectView
+      projects={projects}
+      onSave={(draft) => void save(draft)}
+      onToggleStage={(pid, sid) => void toggleStage(pid, sid)}
+      onDelete={(id) => void remove(id)}
+    />
   );
 }

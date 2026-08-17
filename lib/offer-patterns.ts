@@ -274,3 +274,180 @@ export function summarize(samples: PatternSample[], rows: PatternRow[]): Pattern
 
   return { total, replied, rate: pct(replied, total), best, worst };
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Связки признаков                                                           */
+/* -------------------------------------------------------------------------- */
+
+export type ComboRow = {
+  a: PatternId;
+  b: PatternId;
+  /** Офферов, где есть оба признака сразу. */
+  count: number;
+  replies: number;
+  rate: number;
+  /** Насколько связка сильнее общей доли ответов, в процентных пунктах. */
+  lift: number;
+  reliable: boolean;
+};
+
+/**
+ * Пары признаков, которые встречаются вместе.
+ *
+ * Один признак почти никогда не решает: отвечают не на «вопрос в тексте», а
+ * на «личное наблюдение плюс вопрос». Сравнение идёт с общей долей ответов,
+ * а не с офферами без пары: пар много, и попарные знаменатели быстро
+ * вырождаются в единицы.
+ */
+export function compareCombos(samples: PatternSample[], limit = 5): ComboRow[] {
+  const total = samples.length;
+  if (total === 0) return [];
+
+  const parsed = samples.map((sample) => ({
+    ids: new Set(patternsOf(sample.content)),
+    replied: isReplied(sample.result),
+  }));
+
+  const baseRate = pct(parsed.filter((item) => item.replied).length, total);
+  const rows: ComboRow[] = [];
+
+  for (let i = 0; i < PATTERN_IDS.length; i += 1) {
+    for (let j = i + 1; j < PATTERN_IDS.length; j += 1) {
+      const a = PATTERN_IDS[i];
+      const b = PATTERN_IDS[j];
+
+      // «Короткий» и «длинный» — концы одной шкалы, вместе не встречаются.
+      if ((a === 'short' && b === 'long') || (a === 'long' && b === 'short')) continue;
+
+      let count = 0;
+      let replies = 0;
+      for (const item of parsed) {
+        if (!item.ids.has(a) || !item.ids.has(b)) continue;
+        count += 1;
+        if (item.replied) replies += 1;
+      }
+
+      if (count === 0) continue;
+
+      const rate = pct(replies, count);
+      rows.push({
+        a,
+        b,
+        count,
+        replies,
+        rate,
+        lift: rate - baseRate,
+        reliable: count >= MIN_SAMPLE,
+      });
+    }
+  }
+
+  return rows
+    .sort((x, y) => {
+      if (x.reliable !== y.reliable) return x.reliable ? -1 : 1;
+      const byLift = y.lift - x.lift;
+      if (byLift !== 0) return byLift;
+      return y.count - x.count;
+    })
+    .slice(0, limit);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Каркас идеального оффера                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Порядок блоков в тексте.
+ *
+ * Это не выдумка про «правильную структуру», а порядок, в котором сообщение
+ * читается глазами: сначала понятно, кто пишет и что смотрел, потом что не
+ * так, потом что с этого будет, и только в конце — что делать. Каркас
+ * собирается из этого порядка, а состав блоков берётся из твоих же цифр.
+ */
+export const BLUEPRINT_ORDER: PatternId[] = [
+  'greeting',
+  'personal',
+  'compliment',
+  'problem',
+  'value',
+  'numbers',
+  'sincere',
+  'cta',
+  'question',
+  'structured',
+  'link',
+  'emoji',
+];
+
+export type BlueprintStep = {
+  id: PatternId;
+  /**
+   * keep — цифры говорят «работает, оставляй»;
+   * drop — «мешает, убирай»;
+   * test — данных не хватает, блок стоит проверить на следующих офферах.
+   */
+  action: 'keep' | 'drop' | 'test';
+  lift: number;
+  /** Доля ответов у офферов с этим блоком. */
+  rate: number;
+  count: number;
+};
+
+export type Blueprint = {
+  steps: BlueprintStep[];
+  /** Целевая длина: та, где доля ответов выше. null — сравнивать нечего. */
+  length: LengthBucket | null;
+  lengthRate: number;
+  /** Что проверить следующим — самый неисследованный блок. */
+  experiment: PatternId | null;
+  /**
+   * Насколько каркасу можно верить, 0..100. Считается по доле блоков,
+   * у которых набралась выборка с обеих сторон.
+   */
+  confidence: number;
+};
+
+/**
+ * Каркас оффера, собранный из собственных результатов.
+ *
+ * Пересобирается на каждом новом оффере: это не шаблон, который написали
+ * один раз, а текущая гипотеза, которая двигается вслед за цифрами. Блоки
+ * без данных не выкидываются, а помечаются «проверить» — иначе каркас
+ * застынет на том, что случайно попробовал первым.
+ */
+export function buildBlueprint(samples: PatternSample[]): Blueprint {
+  const byId = new Map(comparePatterns(samples).map((row) => [row.id, row]));
+
+  const steps: BlueprintStep[] = BLUEPRINT_ORDER.map((id) => {
+    const row = byId.get(id);
+
+    // Блока не было ни в одном оффере — проверить его как раз и стоит.
+    if (!row) return { id, action: 'test' as const, lift: 0, rate: 0, count: 0 };
+
+    const action = !row.reliable ? 'test' : row.lift > 0 ? 'keep' : row.lift < 0 ? 'drop' : 'test';
+    return { id, action, lift: row.lift, rate: row.withRate, count: row.withCount };
+  });
+
+  const lengths = compareLengths(samples);
+  const bestLength = lengths.length > 1
+    ? lengths.reduce((best, row) => (row.rate > best.rate ? row : best))
+    : null;
+
+  // Проверять стоит то, о чём меньше всего известно: сначала блоки, которых
+  // не было вовсе, потом те, где выборка самая тонкая.
+  const untested = steps
+    .filter((step) => step.action === 'test')
+    .sort((a, b) => a.count - b.count);
+
+  // Считаем только блоки каркаса: «короткий» и «длинный» живут отдельной
+  // осью длины, и в доверии к структуре им места нет.
+  const reliableCount = steps.filter((step) => step.action !== 'test').length;
+
+  return {
+    steps,
+    length: bestLength?.bucket ?? null,
+    lengthRate: bestLength?.rate ?? 0,
+    experiment: untested[0]?.id ?? null,
+    confidence: pct(reliableCount, BLUEPRINT_ORDER.length),
+  };
+}

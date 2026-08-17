@@ -5,6 +5,7 @@ import { GlassCard } from '@/components/GlassCard';
 import { useLanguage } from '@/components/LanguageProvider';
 import { Collapsible } from '@/components/ui';
 import {
+  compareCombos,
   compareLengths,
   comparePatterns,
   MIN_SAMPLE,
@@ -54,11 +55,12 @@ function LiftBadge({ lift, reliable }: { lift: number; reliable: boolean }) {
 export function PatternsCard({ samples }: { samples: PatternSample[] }) {
   const { t, tf } = useLanguage();
 
-  const { rows, lengths, summary } = useMemo(() => {
+  const { rows, lengths, combos, summary } = useMemo(() => {
     const computed = comparePatterns(samples);
     return {
       rows: computed,
       lengths: compareLengths(samples),
+      combos: compareCombos(samples),
       summary: summarize(samples, computed),
     };
   }, [samples]);
@@ -77,8 +79,6 @@ export function PatternsCard({ samples }: { samples: PatternSample[] }) {
           ) : undefined
         }
       >
-        <p className="mb-3 text-sm leading-snug text-muted">{t.patterns.subtitle}</p>
-
         {rows.length === 0 ? (
           <p className="py-4 text-sm leading-relaxed text-muted">{t.patterns.empty}</p>
         ) : (
@@ -163,6 +163,63 @@ export function PatternsCard({ samples }: { samples: PatternSample[] }) {
             <p className="mt-3 text-xs leading-relaxed text-white/25">
               {tf(t.patterns.unreliableHint, { n: MIN_SAMPLE })}
             </p>
+
+            {/* Связки. Один признак почти никогда не решает: отвечают не на
+                «вопрос в тексте», а на «личное наблюдение плюс вопрос». */}
+            {combos.length > 0 && (
+              <div className="mt-5 border-t border-divider pt-4">
+                <p className="mb-2 text-xs font-bold uppercase tracking-wide text-white/35">
+                  {t.patterns.combosTitle}
+                </p>
+                <ul className="space-y-2">
+                  {combos.map((combo) => (
+                    <li
+                      key={`${combo.a}+${combo.b}`}
+                      className={`flex items-center justify-between gap-3 rounded-2xl border border-glass-border p-2.5 ${
+                        combo.reliable ? 'bg-white/[0.04]' : 'bg-white/[0.02]'
+                      }`}
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span
+                          className={`block text-sm font-bold leading-snug ${
+                            combo.reliable ? 'text-white' : 'text-white/45'
+                          }`}
+                        >
+                          {t.patterns.names[combo.a]}
+                          <span className="mx-1 text-white/30">+</span>
+                          {t.patterns.names[combo.b]}
+                        </span>
+                        <span className="mt-0.5 block text-xs text-white/30">
+                          {tf(t.patterns.combosCount, { n: combo.count })}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-right">
+                        <span className="block text-base font-extrabold tabular-nums">
+                          {combo.rate}%
+                        </span>
+                        <span
+                          className={`block text-xs font-bold tabular-nums ${
+                            !combo.reliable
+                              ? 'text-white/25'
+                              : combo.lift > 0
+                                ? 'text-success'
+                                : combo.lift < 0
+                                  ? 'text-danger'
+                                  : 'text-white/35'
+                          }`}
+                        >
+                          {combo.lift > 0 ? '+' : ''}
+                          {combo.lift}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-xs leading-relaxed text-white/25">
+                  {t.patterns.combosHint}
+                </p>
+              </div>
+            )}
 
             {lengths.length > 1 && (
               <div className="mt-5 border-t border-divider pt-4">

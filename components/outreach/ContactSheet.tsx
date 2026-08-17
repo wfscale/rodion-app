@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { BellPlus, BookmarkPlus, Trash2 } from 'lucide-react';
+import { BellPlus, BookmarkPlus, MessagesSquare, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { BottomSheet } from '@/components/BottomSheet';
 import { useLanguage } from '@/components/LanguageProvider';
@@ -122,6 +122,8 @@ type ContactSheetProps = {
   onSaveToOffers: (contact: OutreachContact) => void | Promise<void>;
   /** Поставить напоминание по этому человеку. */
   onAddReminder?: (contact: OutreachContact) => void;
+  /** Открыть переписку. undefined — колонки ещё нет (не прогнали migration-v6). */
+  onOpenConversation?: (contact: OutreachContact) => void;
   /** Библиотека офферов открывается со 2-го уровня. */
   canSaveToOffers?: boolean;
   /** «Следующий шаг» открывается с 4-го уровня. */
@@ -136,6 +138,7 @@ export function ContactSheet({
   onDelete,
   onSaveToOffers,
   onAddReminder,
+  onOpenConversation,
   canSaveToOffers = false,
   showNextStep = false,
 }: ContactSheetProps) {
@@ -314,6 +317,18 @@ export function ContactSheet({
             value={draft.next_step}
             onChange={(e) => patch({ next_step: e.target.value })}
           />
+        )}
+
+        {/* Переписка — сразу после «следующего шага»: это и есть следующий
+            шаг, только уже случившийся. Счётчик в кнопке нужен, чтобы не
+            открывать её ради проверки, есть ли там что-нибудь. */}
+        {snapshot && onOpenConversation && (
+          <Button variant="ghost" full onClick={() => onOpenConversation(snapshot)}>
+            <MessagesSquare size={16} />
+            {snapshot.conversation?.length
+              ? tf(t.outreach.conversationCount, { n: snapshot.conversation.length })
+              : t.outreach.conversationAdd}
+          </Button>
         )}
 
         {snapshot && onAddReminder && (

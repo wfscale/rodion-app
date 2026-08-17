@@ -18,7 +18,7 @@ import { ScaleDashboard } from '@/components/scale/ScaleDashboard';
 import { Button, FullPageLoader, PageTitle, Segmented } from '@/components/ui';
 import { XpBar } from '@/components/XpBar';
 import { getLogicalDate, shiftDate } from '@/lib/date';
-import { dailySeries, funnelTotals, overdueTouchCount, xpSeries } from '@/lib/insights';
+import { dailySeries, funnelTotals, overdueTouchCount, spanDays, xpSeries } from '@/lib/insights';
 import { needsEveningCheckin } from '@/lib/mode';
 import { missingWeeks, statsForWeek } from '@/lib/reports';
 import { createClient } from '@/lib/supabase/client';
@@ -26,7 +26,16 @@ import type { WeeklyReport, XpTransaction } from '@/lib/types';
 import { FEATURE_LEVEL, nextLevelTeaser } from '@/lib/xp';
 
 type Metric = 'sent' | 'xp';
-type Range = 7 | 14 | 30 | 90;
+type Range = 7 | 14 | 30 | 90 | 'all';
+
+/**
+ * Потолок окна «за всё время».
+ *
+ * Год — предел, на котором график ещё остаётся кривой, а не сплошной
+ * заливкой: дальше на 375px точки просто сливаются. Данные глубже года
+ * никуда не деваются, их видно в тепловой карте и в отчётах.
+ */
+const ALL_TIME_CAP = 365;
 
 export default function ProgressPage() {
   const { t, tf } = useLanguage();
@@ -110,10 +119,15 @@ export default function ProgressPage() {
 
   /** Ряд для графика: рассылки по дате касания или XP по дате начисления. */
   const chartData = useMemo<ChartPoint[]>(() => {
+    // «Всё время» — от первой рассылки до сегодня. XP считается по тому же
+    // окну: две метрики на одной оси обязаны показывать один и тот же отрезок.
+    const days =
+      range === 'all' ? spanDays(app.contacts, app.today, ALL_TIME_CAP) : range;
+
     const series =
       metric === 'sent'
-        ? dailySeries(app.contacts, app.today, range)
-        : xpSeries(transactions, app.today, range, (date) => getLogicalDate(date));
+        ? dailySeries(app.contacts, app.today, days)
+        : xpSeries(transactions, app.today, days, (date) => getLogicalDate(date));
 
     return series.map((point) => ({ date: point.date, value: point.sent }));
   }, [metric, range, app.contacts, app.today, transactions]);
@@ -202,12 +216,13 @@ export default function ProgressPage() {
           />
           <Segmented<string>
             value={String(range)}
-            onChange={(value) => setRange(Number(value) as Range)}
+            onChange={(value) => setRange(value === 'all' ? 'all' : (Number(value) as Range))}
             options={[
               { value: '7', label: t.progress.range7 },
               { value: '14', label: t.progress.range14 },
               { value: '30', label: t.progress.range30 },
               { value: '90', label: t.progress.range90 },
+              { value: 'all', label: t.progress.rangeAll },
             ]}
           />
         </div>

@@ -1,4 +1,4 @@
-import { shiftDate, weekStart } from '@/lib/date';
+import { daysBetween, shiftDate, weekStart } from '@/lib/date';
 import { followUpState, needsTouch } from '@/lib/followup';
 import {
   CALL_STATUSES,
@@ -39,6 +39,32 @@ export function dailySeries(
     const date = shiftDate(today, -(days - 1 - i));
     return { date, sent: counts.get(date) ?? 0 };
   });
+}
+
+/**
+ * Ширина окна «за всё время» в днях.
+ *
+ * От первой рассылки до сегодня включительно. Минимум — неделя: график из
+ * двух точек не кривая, а отрезок. Максимум ограничивает вызывающий, чтобы
+ * годы истории не превращались в тысячу узлов SVG.
+ */
+export function spanDays(
+  contacts: OutreachContact[],
+  today: string,
+  max: number,
+): number {
+  let earliest: string | null = null;
+  for (const contact of contacts) {
+    const date = (contact.first_contact_date ?? '').slice(0, 10);
+    if (!date) continue;
+    if (earliest === null || date < earliest) earliest = date;
+  }
+
+  if (earliest === null || earliest > today) return 7;
+
+  // +1: обе границы включительно, иначе первый день выпадает из окна.
+  const span = daysBetween(today, earliest) + 1;
+  return Math.max(7, Math.min(max, span));
 }
 
 /** XP по дням из транзакций — вторая метрика того же графика. */

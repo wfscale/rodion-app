@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Bell, Flame, History, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
+import { Bell, History, Lightbulb, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useApp } from '@/components/AppProvider';
 import { GlassCard } from '@/components/GlassCard';
@@ -12,7 +12,7 @@ import { ReminderList } from '@/components/reminders/ReminderList';
 import { ReminderSheet } from '@/components/reminders/ReminderSheet';
 import { Button, EmptyState, PageTitle, Segmented, Spinner } from '@/components/ui';
 import { useNotes } from '@/hooks/useNotes';
-import { countByTag, hasNoteToday, noteStreak, resurface } from '@/lib/notes-stats';
+import { countByTag, hasNoteToday, resurface } from '@/lib/notes-stats';
 import { standalone } from '@/lib/reminders';
 import { NOTE_TAGS, type Note, type NoteTag, type Reminder } from '@/lib/types';
 import { onceKey, XP } from '@/lib/xp';
@@ -45,14 +45,19 @@ export default function NotesPage() {
   const [reminderOpen, setReminderOpen] = useState(false);
   const [openReminder, setOpenReminder] = useState<Reminder | null>(null);
 
+  /**
+   * Цепочки дней здесь намеренно нет.
+   *
+   * Мысль приходит не по расписанию: требовать «одну в день» — значит
+   * заставлять писать пустое, чтобы не рвать полоску, а потом бросить
+   * раздел совсем. Считается только то, что накопилось, — это не давит.
+   */
   const stats = useMemo(
     () => ({
       count: notes.notes.length,
-      streak: noteStreak(notes.notes, app.today),
       byTag: countByTag(notes.notes),
-      todayDone: hasNoteToday(notes.notes, app.today),
     }),
-    [notes.notes, app.today],
+    [notes.notes],
   );
 
   const fromPast = useMemo(() => resurface(notes.notes, app.today), [notes.notes, app.today]);
@@ -88,21 +93,21 @@ export default function NotesPage() {
 
   const notesTab = (
     <>
-      {/* Полоса состояния: цепочка, счётчик, инсайты. Заметки перестают быть
+      {/* Полоса состояния: сколько накопилось. Заметки перестают быть
           свалкой, когда видно, что они складываются во что-то. */}
       <div className="grid grid-cols-3 gap-2">
         {[
-          {
-            icon: <Flame size={15} />,
-            value: stats.streak,
-            label: t.notes.statStreak,
-            lit: stats.streak > 0 && stats.todayDone,
-          },
           {
             icon: <History size={15} />,
             value: stats.count,
             label: t.notes.statCount,
             lit: false,
+          },
+          {
+            icon: <Lightbulb size={15} />,
+            value: stats.byTag.idea,
+            label: t.notes.statIdeas,
+            lit: stats.byTag.idea > 0,
           },
           {
             icon: <Sparkles size={15} />,
@@ -131,10 +136,6 @@ export default function NotesPage() {
           </div>
         ))}
       </div>
-
-      <p className="text-xs leading-relaxed text-white/30">
-        {stats.todayDone ? t.notes.todayDone : t.notes.streakHint}
-      </p>
 
       {/* Быстрое добавление */}
       <GlassCard>

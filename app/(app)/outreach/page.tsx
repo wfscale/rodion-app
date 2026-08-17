@@ -9,9 +9,12 @@ import { useLanguage } from '@/components/LanguageProvider';
 import { LockedFeature } from '@/components/LockedFeature';
 import { OfferCard } from '@/components/OfferCard';
 import { OfferSheet, type OfferDraft } from '@/components/OfferSheet';
+import { BlueprintCard } from '@/components/outreach/BlueprintCard';
 import { ContactCards } from '@/components/outreach/ContactCards';
 import { ContactSheet, type ContactDraft } from '@/components/outreach/ContactSheet';
 import { ContactTable, type TableSort } from '@/components/outreach/ContactTable';
+import { ConversationSheet } from '@/components/outreach/ConversationSheet';
+import { DialogueCard } from '@/components/outreach/DialogueCard';
 import { FollowUpList } from '@/components/outreach/FollowUpList';
 import { FunnelChart, type FunnelTarget } from '@/components/outreach/FunnelChart';
 import { HourlyCard } from '@/components/outreach/HourlyCard';
@@ -69,6 +72,9 @@ export default function OutreachPage() {
   const [reminderOpen, setReminderOpen] = useState(false);
   const [reminderContactId, setReminderContactId] = useState<string | null>(null);
 
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatContactId, setChatContactId] = useState<string | null>(null);
+
   const canOffers = app.can('offers');
   const canNiches = app.can('niches');
   const canSpeed = app.can('speed');
@@ -99,6 +105,13 @@ export default function OutreachPage() {
   );
 
   const niches = useMemo(() => nicheOptions(app.contacts), [app.contacts]);
+
+  // Контакт для шторки переписки берётся из списка по id, а не хранится
+  // копией: после сохранения список обновляется, и снимок стал бы устаревшим.
+  const chatContact = useMemo(
+    () => app.contacts.find((contact) => contact.id === chatContactId) ?? null,
+    [app.contacts, chatContactId],
+  );
 
   // Список режется по limit: 25+ карточек отодвигали аналитику далеко вниз.
   const shown = useMemo(() => visible.slice(0, limit), [visible, limit]);
@@ -427,9 +440,13 @@ export default function OutreachPage() {
             {t.offers.addTitle}
           </Button>
 
-          {/* Разбор паттернов стоит над библиотекой: смысл вкладки не в том,
-              чтобы хранить тексты, а в том, чтобы понимать, какие работают. */}
+          {/* Разбор стоит над библиотекой: смысл вкладки не в том, чтобы
+              хранить тексты, а в том, чтобы понимать, какие работают.
+              Порядок внутри — от вывода к данным: сначала «что писать»,
+              потом «почему именно так», потом сами цифры. */}
+          <BlueprintCard samples={patternSamples} />
           <PatternsCard samples={patternSamples} />
+          {app.conversationsReady && <DialogueCard contacts={app.contacts} />}
 
           {visibleOffers.length === 0 ? (
             <EmptyState text={t.offers.empty} />
@@ -482,8 +499,26 @@ export default function OutreachPage() {
               }
             : undefined
         }
+        onOpenConversation={
+          app.conversationsReady
+            ? (contact) => {
+                setChatContactId(contact.id);
+                setSheetOpen(false);
+                setChatOpen(true);
+              }
+            : undefined
+        }
         canSaveToOffers={canOffers}
         showNextStep={canSpeed}
+      />
+
+      {/* id не сбрасывается на закрытии: пока шторка уезжает вниз, ей нужен
+          контакт, иначе на прощание мигает пустой заголовок. */}
+      <ConversationSheet
+        contact={chatContact}
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        onSave={(id, messages) => app.saveConversation(id, messages)}
       />
 
       <ReminderSheet

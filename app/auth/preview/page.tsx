@@ -20,8 +20,11 @@ import { OutreachCounter } from '@/components/home/OutreachCounter';
 import { QuickAddOutreach } from '@/components/home/QuickAddOutreach';
 import { RoundNudge } from '@/components/home/RoundNudge';
 import { ModeBlock } from '@/components/mode/ModeBlock';
+import { BlueprintCard } from '@/components/outreach/BlueprintCard';
 import { ContactCards } from '@/components/outreach/ContactCards';
 import { ContactTable, type TableSort } from '@/components/outreach/ContactTable';
+import { ConversationSheet } from '@/components/outreach/ConversationSheet';
+import { DialogueCard } from '@/components/outreach/DialogueCard';
 import { FollowUpList } from '@/components/outreach/FollowUpList';
 import { FunnelChart } from '@/components/outreach/FunnelChart';
 import { HourlyCard } from '@/components/outreach/HourlyCard';
@@ -37,6 +40,7 @@ import { HallOfFame, MentorCard, WeekCompare } from '@/components/progress/Insig
 import { LevelLadder } from '@/components/progress/LevelLadder';
 import { ReminderList } from '@/components/reminders/ReminderList';
 import { BottomNav } from '@/components/BottomNav';
+import type { ChatMessage } from '@/lib/conversation';
 import { EMPTY_FILTERS, nicheOptions, type OutreachFilters as Filters } from '@/lib/outreach-filter';
 import type { ActivityEntry, DailyTask, OutreachContact, Reminder } from '@/lib/types';
 
@@ -63,13 +67,22 @@ const contact = (over: Partial<OutreachContact>): OutreachContact =>
     last_touch_at: '2026-08-08',
     touch_count: 1,
     muted: false,
+    conversation: [],
     created_at: '2026-08-10T10:00:00Z',
     updated_at: '2026-08-10T10:00:00Z',
     ...over,
   }) as OutreachContact;
 
+/** Переписка с типичной поломкой: ход за ним, а ты молчишь. */
+const CHAT: ChatMessage[] = [
+  { role: 'me', text: 'Привет! Смотрел твой последний запуск — сильно сделано. Могу разобрать воронку, интересно?' },
+  { role: 'them', text: 'привет, а что конкретно предлагаешь' },
+  { role: 'me', text: 'Разберу путь от рилса до оплаты и покажу, где теряются заявки.' },
+  { role: 'them', text: 'звучит ок, а по деньгам как?' },
+];
+
 const CONTACTS: OutreachContact[] = [
-  contact({ name: '@anna_english', niche: 'Английский', status: 'replied' }),
+  contact({ name: '@anna_english', niche: 'Английский', status: 'replied', conversation: CHAT }),
   contact({ name: '@coach_dmitry', niche: 'Фитнес', status: 'call' }),
   contact({ name: '@maria_psy', niche: 'Психология', status: 'sent' }),
   contact({ name: '@vlad_money', niche: 'Финансы', status: 'blocked' }),
@@ -132,6 +145,7 @@ export default function PreviewPage() {
   const [done, setDone] = useState<Record<string, boolean>>({ water: true, pushups: true });
   const [sort, setSort] = useState<TableSort | null>(null);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [chatOpen, setChatOpen] = useState(false);
 
   return (
     <main className="md:pl-[240px]">
@@ -194,7 +208,9 @@ export default function PreviewPage() {
 
         <HourlyCard contacts={CONTACTS} />
 
+        <BlueprintCard samples={OFFERS} />
         <PatternsCard samples={OFFERS} />
+        <DialogueCard contacts={CONTACTS} />
 
         <ContactCards contacts={CONTACTS} onOpenContact={() => undefined} highlightId={null} />
 
@@ -240,7 +256,20 @@ export default function PreviewPage() {
           onToggle={() => undefined}
           onOpen={() => undefined}
         />
+
+        {/* Шторка переписки: открывается кнопкой, потому что внутри её
+            проверяют скроллом, разбором и стрелками порядка. */}
+        <button type="button" onClick={() => setChatOpen(true)} className="btn-ghost w-full">
+          Открыть переписку
+        </button>
       </div>
+
+      <ConversationSheet
+        contact={CONTACTS[0]}
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        onSave={() => undefined}
+      />
 
       <BottomNav />
     </main>

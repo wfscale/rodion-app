@@ -1,22 +1,12 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Check, HelpCircle, Lock, Sparkles } from 'lucide-react';
+import { Check, Lock, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo } from 'react';
 import { CardTitle, GlassCard } from '@/components/GlassCard';
 import { useLanguage } from '@/components/LanguageProvider';
-import {
-  hiddenAhead,
-  levelLadder,
-  levelName,
-  MAX_LEVEL,
-  revealCeiling,
-  type LadderRow,
-} from '@/lib/xp';
-
-/** Сколько строк тумана рисовать под открытой частью лестницы. */
-const FOG_ROWS = 3;
+import { levelLadder, levelName, type LadderRow } from '@/lib/xp';
 
 function stateStyles(state: LadderRow['state']) {
   switch (state) {
@@ -54,29 +44,22 @@ function stateStyles(state: LadderRow['state']) {
 /**
  * Лестница уровней.
  *
- * Главное правило: полного списка не видно никогда. Открыт текущий блок из
- * пяти ступеней, дальше туман. Взял последнюю ступень блока — проявились
- * следующие пять. Двадцать строк сразу это список дел, от которого мозг
- * устаёт заранее; пять — это дистанция, которую видно целиком.
+ * Единственное правило: сколько всего уровней — не сообщается нигде. Ни
+ * счётчика «7 / 20», ни строк-заглушек под последней ступенью, ни фразы
+ * «за туманом ещё столько-то». Видно пройденное, текущее и две-три ступени
+ * впереди — ровно та дистанция, которую хочется закрыть.
+ *
+ * Любое число, намекающее на длину пути, возвращает мозг к вопросу «сколько
+ * ещё осталось», а это единственный вопрос, после которого бросают.
  */
 export function LevelLadder({ level }: { level: number }) {
-  const { t, tf } = useLanguage();
+  const { t } = useLanguage();
 
   const rows = useMemo(() => levelLadder(level), [level]);
-  const hidden = hiddenAhead(level);
-  const ceiling = revealCeiling(level);
 
   return (
     <GlassCard delay={4}>
-      <CardTitle
-        right={
-          <span className="text-xs font-bold tabular-nums text-white/35">
-            {Math.min(level, MAX_LEVEL)} / {MAX_LEVEL}
-          </span>
-        }
-      >
-        {t.progress.ladderTitle}
-      </CardTitle>
+      <CardTitle>{t.progress.ladderTitle}</CardTitle>
 
       <ul className="space-y-2">
         {rows.map((row) => {
@@ -147,37 +130,7 @@ export function LevelLadder({ level }: { level: number }) {
             </motion.li>
           );
         })}
-
-        {/* Туман: строки без названий. Видно, что дорога продолжается, но не
-            видно куда — именно это и заставляет идти дальше. */}
-        {hidden > 0 &&
-          Array.from({ length: Math.min(FOG_ROWS, hidden) }, (_, i) => (
-            <li
-              key={`fog-${i}`}
-              style={{ opacity: 0.5 - i * 0.14 }}
-              className="flex items-center gap-3 rounded-2xl border border-dashed border-white/10 bg-white/[0.015] p-3"
-            >
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/15 text-white/25">
-                <HelpCircle size={14} />
-              </span>
-              <span className="text-sm font-extrabold tracking-widest text-white/20">
-                {t.progress.ladderMystery}
-              </span>
-            </li>
-          ))}
       </ul>
-
-      <p className="mt-3 text-xs leading-relaxed text-white/30">
-        {hidden > 0 ? (
-          <>
-            {tf(t.progress.ladderHidden, { n: hidden })}
-            {' · '}
-            {tf(t.progress.ladderHiddenHint, { n: ceiling })}
-          </>
-        ) : (
-          t.progress.ladderNothingHidden
-        )}
-      </p>
     </GlassCard>
   );
 }

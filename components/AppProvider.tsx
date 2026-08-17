@@ -14,6 +14,7 @@ import {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { applyAccent, readAccent } from '@/lib/accent';
+import { parseMessages, type ChatMessage } from '@/lib/conversation';
 import { FirstEventOverlay, type FirstEventKind } from '@/components/overlays/FirstEventOverlay';
 import { LevelUpOverlay } from '@/components/overlays/LevelUpOverlay';
 import { QuotaClosedOverlay } from '@/components/overlays/QuotaClosedOverlay';
@@ -109,6 +110,9 @@ type AppContextValue = {
   remindersReady: boolean;
   remindersDue: number;
 
+  /** false — колонки переписки ещё нет (не прогнали migration-v6). */
+  conversationsReady: boolean;
+
   quota: QuotaState;
   chain: number;
   levelInfo: LevelInfo;
@@ -126,6 +130,8 @@ type AppContextValue = {
   touchContact: (contact: OutreachContact) => Promise<void>;
   /** Больше не напоминать про этот контакт. */
   muteContact: (id: string, muted: boolean) => Promise<void>;
+  /** Сохранить переписку целиком. */
+  saveConversation: (id: string, messages: ChatMessage[]) => Promise<void>;
 
   addTask: (text: string) => Promise<void>;
   toggleTask: (id: string) => Promise<void>;
@@ -180,6 +186,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [remindersReady, setRemindersReady] = useState(true);
+  const [conversationsReady, setConversationsReady] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -282,12 +289,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     setProfile(loadedProfile);
+
+    const loadedContacts = (contactsRes.data as OutreachContact[]) ?? [];
+
+    // Колонка переписки появилась в migration-v6. Пока её нет, поле просто
+    // не приходит — раздел прячется, всё остальное работает как работало.
+    setConversationsReady(
+      loadedContacts.length === 0 || 'conversation' in (loadedContacts[0] as object),
+    );
+
     // Статусы из базы могут быть старой шкалы («Отказ» до migration-v5) —
     // приводим их сразу на входе, чтобы ниже по коду вариант был ровно один.
     setContacts(
-      ((contactsRes.data as OutreachContact[]) ?? []).map((contact) => ({
+      loadedContacts.map((contact) => ({
         ...contact,
         status: normalizeStatus(contact.status),
+        conversation: parseMessages(contact.conversation),
       })),
     );
     setActivity((activityRes.data as ActivityEntry[]) ?? []);
@@ -833,6 +850,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [supabase],
   );
 
+  /**
+   * Переписка сохраняется целиком, а не по сообщению.
+   *
+   * Реплики переставляют и удаляют — частичные апдейты здесь означали бы
+   * сверку порядка на две стороны. Диалог короткий, и переписать его
+   * одним запросом дешевле любой синхронизации.
+   */
+  const saveConversation = useCallback(
+    async (id: string, messages: ChatMessage[]) => {
+      setContacts((previous) =>
+        previous.map((c) => (c.id === id ? { ...c, conversation: messages } : c)),
+      );
+
+      const { error: saveError } = await supabase
+        .from('outreach_contacts')
+        .update({ conversation: messages } as never)
+        .eq('id', id);
+
+      if (saveError) {
+        // Колонки может не быть, если migration-v6 ещё не прогнали.
+        setConversationsReady(false);
+        setError(humanError(saveError.message));
+      }
+    },
+    [supabase],
+  );
+
   /* ------------------------------------------------------------------ */
   /*  Задачи дня                                                         */
   /* ------------------------------------------------------------------ */
@@ -1086,6 +1130,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       reminders,
       remindersReady,
       remindersDue,
+      conversationsReady,
       quota,
       chain: profile?.chain_days ?? 0,
       levelInfo,
@@ -1098,6 +1143,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       deleteContact,
       touchContact,
       muteContact,
+      saveConversation,
       addTask,
       toggleTask,
       deleteTask,
@@ -1115,8 +1161,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }),
     [
       user, profile, today, now, loading, error, contacts, activity, tasks, logs, todayLog,
-      reminders, remindersReady, remindersDue, quota, levelInfo, cycleDayNumber, sentTotal, can,
+      reminders, remindersReady, remindersDue, conversationsReady,
+      quota, levelInfo, cycleDayNumber, sentTotal, can,
       addContact, updateContact, setStatus, deleteContact, touchContact, muteContact,
+      saveConversation,
       addTask, toggleTask, deleteTask, addReminder, updateReminder, toggleReminder, deleteReminder,
       toggleHabit, saveDay, submitModeCheckin, updateProfile, awardXp, load, signOut,
     ],

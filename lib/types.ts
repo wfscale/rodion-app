@@ -2,6 +2,8 @@
 // Доменные типы + типизация схемы Supabase
 // ---------------------------------------------------------------------------
 
+import type { ChatMessage } from '@/lib/conversation';
+
 export type WakeQuality = 'easy' | 'normal' | 'hard';
 export type Language = 'ru' | 'en';
 
@@ -189,6 +191,12 @@ export type OutreachContact = {
   touch_count: number;
   /** Ручная пометка «больше не напоминать». */
   muted: boolean;
+  /**
+   * Переписка целиком, в порядке сообщений. Лежит рядом с контактом, а не
+   * отдельной таблицей: читается и пишется всегда вся сразу, а список
+   * рассылок и без того грузится одним запросом.
+   */
+  conversation: ChatMessage[];
   created_at: string;
   updated_at: string;
 };

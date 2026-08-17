@@ -55,7 +55,7 @@ export const en: Dict = {
 
   auth: {
     title: 'Your Growth',
-    subtitle: 'Outreach is what moves. Everything else is background.',
+    subtitle: 'Outreach is the one action that leads to money. Everything else is an imitation.',
     signIn: 'Sign in',
     signUp: 'Sign up',
     email: 'Email',
@@ -154,7 +154,6 @@ export const en: Dict = {
     roundTotal: '{have} all time. {n} more and the count is round: {target}',
     done: 'The count is round. Clean.',
     one: 'One message to {target}. One.',
-    hint: 'A little more than required — and not so much that you burn out.',
     milestone: 'Milestone: {n} messages',
   },
 
@@ -224,6 +223,8 @@ export const en: Dict = {
     saveToOffers: 'Save to offers',
     savedToOffers: 'Added to offers',
     addReminder: 'Remind me about this person',
+    conversationAdd: 'Load the conversation',
+    conversationCount: 'Conversation · {n}',
 
     inlineAdd: 'Add right here',
     empty: 'Empty so far. The first one goes on top.',
@@ -324,7 +325,6 @@ export const en: Dict = {
 
   patterns: {
     title: 'What works in your offers',
-    subtitle: 'Built from your own texts. A refusal counts as a reply.',
     empty: 'Needs a few offers with an outcome — then the breakdown shows up here.',
     summary: 'Replied to {replied} of {total} offers — {rate}%',
     best: 'Strongest signal: {name}',
@@ -337,6 +337,10 @@ export const en: Dict = {
     colLift: 'Difference',
     unreliable: 'thin data',
     unreliableHint: 'Greyed out — fewer than {n} offers on either side. There is a number, not yet trust.',
+
+    combosTitle: 'Pairs that land',
+    combosCount: 'in {n} offers',
+    combosHint: 'Reply rate of the pair against the overall rate. One signal rarely decides — the combination does.',
 
     lengthTitle: 'Text length',
     lengthShort: 'Short',
@@ -381,6 +385,89 @@ export const en: Dict = {
     },
   },
 
+  blueprint: {
+    title: 'Your working skeleton',
+    pitch: 'Build the offer structure out of the texts people actually answered.',
+    build: 'Build the skeleton',
+    empty: 'A few offers with an outcome first — there is nothing to build from yet.',
+    confidence: 'How far this skeleton can be trusted',
+    length: 'Target length:',
+    dropTitle: 'Cut from the text',
+    experimentTitle: 'Next experiment',
+    experiment: 'Try this: {name}',
+    thin: 'No block has enough data yet — this skeleton rests on general rules, not on your numbers.',
+
+    lines: {
+      greeting: 'Their name. One line, no ceremony.',
+      personal: 'The exact thing of theirs you watched: a video, a launch, a post.',
+      compliment: 'What is strong about it — honestly and briefly.',
+      problem: 'What is not working. One thing, not a list of five.',
+      value: 'What they get: revenue, a launch, a flow of leads.',
+      numbers: 'A number or a deadline. Abstractions cannot be checked.',
+      sincere: 'The way you would say it out loud, not the way a template says it.',
+      cta: 'I will send a breakdown, sketch a plan, jump on a call — one, and concrete.',
+      question: 'A question at the end. Without one, replying is optional.',
+      structured: 'Paragraphs. A wall of text rarely gets finished.',
+      link: 'A link only if it makes no sense without one.',
+      emoji: 'One emoji at most, if any.',
+      short: 'Under 400 characters: read in one breath.',
+      long: 'Over 900 characters: takes a decision to sit down and read.',
+    },
+  },
+
+  chat: {
+    title: 'Conversation · {name}',
+    titlePlain: 'Conversation',
+    empty: 'Empty so far. Add messages one by one or paste the whole thread.',
+    roleMe: 'me',
+    roleThem: 'expert',
+    addTitle: 'Add a message',
+    draftPh: 'Message text…',
+    addMe: 'I wrote this',
+    addThem: 'They wrote this',
+    limit: 'max {n}',
+    moveUp: 'Up',
+    moveDown: 'Down',
+
+    pasteOpen: 'Paste the whole thread',
+    pasteTitle: 'Thread from Telegram',
+    pasteHint: 'copy it as is',
+    pastePh: 'Rodion, [16.08.2025 14:03]\nhi…',
+    pasteFound: 'Messages found: {n}',
+    pasteWhoAmI: 'Which one is you?',
+    pasteNoAuthors:
+      'No «Name, [date]» headers here. Add the messages one by one — the order stays right that way.',
+
+    scoreTitle: 'Dialogue breakdown',
+    balance: 'Yours {mine} · theirs {theirs} · length {my} against {their} characters',
+    clean: 'The dialogue holds. Their move.',
+
+    issues: {
+      ballTheirs: 'They replied — you went quiet',
+      deadEnd: 'You had the last word and it leads nowhere',
+      monologue: 'Three messages in a row from you',
+      noQuestion: 'Not a single question in the whole thread',
+      wall: 'You write three times longer than they do',
+      oneSided: 'Mostly you are the one talking',
+    },
+
+    fixes: {
+      ballTheirs: 'Reply today. The pause costs more than an awkward wording.',
+      deadEnd: 'End on a question — otherwise replying is optional.',
+      monologue: 'One message, then wait. A streak reads as pressure.',
+      noQuestion: 'A question is the only thing that obliges an answer.',
+      wall: 'Match their length. They answer the way they like to read.',
+      oneSided: 'Ask more, explain less. Let them talk.',
+    },
+  },
+
+  chatDigest: {
+    title: 'What breaks in your conversations',
+    empty: 'Load threads inside expert cards — the breakdown shows up here.',
+    summary: 'Threads analysed: {n}',
+    waiting: 'Waiting on your reply: {n}',
+  },
+
   tags: {
     idea: 'Idea',
     goal: 'Goal',
@@ -418,10 +505,6 @@ export const en: Dict = {
     unlocksTitle: 'Unlocked',
 
     ladderTitle: 'The ladder',
-    ladderHidden: '{n} more levels behind the fog',
-    ladderHiddenHint: 'Take level {n} — the next five appear.',
-    ladderMystery: '???',
-    ladderNothingHidden: 'Everything is open. From here it is just numbers.',
     ladderCurrent: 'you are here',
     ladderNext: 'next',
 
@@ -431,11 +514,13 @@ export const en: Dict = {
     chartEmpty: 'No data yet — send the first message.',
     chartPrev: 'Previous day',
     chartNext: 'Next day',
-    chartScale: 'scale',
-    range7: '7 days',
-    range14: '14 days',
-    range30: '30 days',
-    range90: '90 days',
+    chartActiveDays: 'Active',
+    chartPerActiveDay: 'Average',
+    range7: '7d',
+    range14: '14d',
+    range30: '30d',
+    range90: '90d',
+    rangeAll: 'All',
   },
 
   heatmap: {
@@ -793,11 +878,8 @@ Abstinence is the price of becoming a magnet.`,
     tabReminders: 'Reminders',
 
     statCount: 'entries',
-    statStreak: 'days in a row',
+    statIdeas: 'ideas',
     statInsights: 'insights',
-    streakHint: 'One thought a day holds the chain. Miss it and it restarts.',
-    firstToday: 'First thought of the day',
-    todayDone: 'Today’s thought is written down.',
 
     resurfaceTitle: 'From the past',
     resurfaceHint: 'Written and forgotten — the usual fate of ideas.',
@@ -865,7 +947,7 @@ Abstinence is the price of becoming a magnet.`,
 
     about: 'About',
     version: 'Version',
-    aboutText: 'Built for Rodion. Outreach is what moves — the rest is background.',
+    aboutText: 'Built for Rodion. Outreach leads to money — the rest is an imitation.',
   },
 
   xpReasons: {
@@ -890,6 +972,6 @@ Abstinence is the price of becoming a magnet.`,
     title: 'LEVEL UP',
     unlocked: 'Unlocked',
     continue: 'Continue',
-    revealed: 'The fog pulled back: five more levels visible',
+    revealed: 'New steps appeared ahead',
   },
 };

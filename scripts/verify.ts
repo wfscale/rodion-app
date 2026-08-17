@@ -48,6 +48,9 @@ import type { OutreachContact } from '@/lib/types';
 import { isRound, milestonesCrossed, milestoneWeight, pickNudge, roundTarget } from '@/lib/round';
 import { ACCENT_KEYS } from '@/lib/accent';
 import {
+  BLUEPRINT_ORDER,
+  buildBlueprint,
+  compareCombos,
   compareLengths,
   comparePatterns,
   isReplied,
@@ -55,6 +58,17 @@ import {
   PATTERN_IDS,
   summarize,
 } from '@/lib/offer-patterns';
+import {
+  assignRoles,
+  authorsOf,
+  chatIssues,
+  chatMetrics,
+  chatScore,
+  CHAT_ISSUE_IDS,
+  digestChats,
+  parseChat,
+  parseMessages,
+} from '@/lib/conversation';
 import {
   activeCount,
   composeDueAt,
@@ -83,9 +97,10 @@ import {
   hallOfFame,
   heatmap,
   primeScore,
+  spanDays,
   weakLink,
 } from '@/lib/insights';
-import { countByTag, hasNoteToday, noteStreak, resurface } from '@/lib/notes-stats';
+import { countByTag, hasNoteToday, resurface } from '@/lib/notes-stats';
 import { niceMax, smoothPath } from '@/lib/chart';
 import { statsForWeek, missingWeeks } from '@/lib/reports';
 import { buildPush } from '@/lib/push-messages';
@@ -272,20 +287,39 @@ check('на каждом уровне со 2-го есть что открыть
 check('на максимуме тизера нет', nextLevelTeaser(MAX_LEVEL), null);
 
 section('Постепенное раскрытие лестницы');
-check('на 1-м видно пять ступеней', revealCeiling(1), 5);
-check('на 4-м всё ещё пять', revealCeiling(4), 5);
-check('взял 5-й — открылось десять', revealCeiling(5), 10);
-check('на 9-м всё ещё десять', revealCeiling(9), 10);
-check('взял 10-й — открылось пятнадцать', revealCeiling(10), 15);
-check('взял 15-й — открылось двадцать', revealCeiling(15), 20);
+check('на 1-м видно три ступени', revealCeiling(1), 3);
+check('на 2-м всё ещё три', revealCeiling(2), 3);
+check('взял 3-й — открылось шесть', revealCeiling(3), 6);
+check('на 5-м всё ещё шесть', revealCeiling(5), 6);
+check('взял 6-й — открылось девять', revealCeiling(6), 9);
+check('взял 18-й — открылось двадцать', revealCeiling(18), 20);
 check('выше максимума не показываем', revealCeiling(20), 20);
-check('на 1-м скрыто пятнадцать', hiddenAhead(1), 15);
+check('на 1-м скрыто семнадцать', hiddenAhead(1), 17);
 check('на максимуме скрытого нет', hiddenAhead(20), 0);
-check('лестница обрывается на потолке видимости', levelLadder(3).length, 5);
+
+// Впереди текущего всегда одна-три ступени: этого хватает, чтобы видеть
+// куда шагать, и мало, чтобы прикинуть длину всего пути.
+check(
+  'впереди никогда не больше трёх ступеней',
+  Array.from({ length: MAX_LEVEL }, (_, i) => revealCeiling(i + 1) - (i + 1)).filter(
+    (ahead) => ahead > 3,
+  ),
+  [],
+);
+check(
+  'ниже максимума впереди всегда хоть одна ступень',
+  Array.from({ length: MAX_LEVEL - 1 }, (_, i) => revealCeiling(i + 1) - (i + 1)).filter(
+    (ahead) => ahead < 1,
+  ),
+  [],
+);
+
+check('лестница обрывается на потолке видимости', levelLadder(3).length, 6);
 check('текущий уровень помечен', levelLadder(3).find((r) => r.level === 3)?.state, 'current');
 check('пройденные помечены', levelLadder(3).find((r) => r.level === 2)?.state, 'done');
 check('следующий помечен', levelLadder(3).find((r) => r.level === 4)?.state, 'next');
 check('дальний закрыт', levelLadder(3).find((r) => r.level === 5)?.state, 'locked');
+check('за потолок не заглядываем', levelLadder(3).some((r) => r.level > 6), false);
 
 section('Прогрессивная квота');
 check('старт — 5', calculateQuota(0), 5);
@@ -705,6 +739,175 @@ const patternSummary = summarize(
 check('сводка считает долю ответов', patternSummary.rate, 50);
 
 /* -------------------------------------------------------------------------- */
+section('Связки признаков');
+
+const comboRows = compareCombos([
+  sample('Привет! Посмотрел твой блог, зацепило. Могу помочь?', 'replied'),
+  sample('Привет! Смотрел последний запуск, сильно. Давай обсудим?', 'call'),
+  sample('Привет! Смотрел твои сторис, круто. Интересно?', 'replied_no'),
+  sample('Предлагаю сотрудничество', 'sent'),
+  sample('Предлагаю услуги продюсера', 'sent'),
+  sample('Здравствуйте, предлагаю сотрудничество', 'sent'),
+]);
+
+const personalQuestion = comboRows.find(
+  (row) =>
+    (row.a === 'personal' && row.b === 'question') ||
+    (row.a === 'question' && row.b === 'personal'),
+);
+check('связка «личное + вопрос» найдена', Boolean(personalQuestion), true);
+check('встретилась трижды', personalQuestion?.count, 3);
+check('и все три ответили', personalQuestion?.rate, 100);
+check('связка сильнее общей доли', (personalQuestion?.lift ?? 0) > 0, true);
+check('выборка достаточна', personalQuestion?.reliable, true);
+check('связки отсортированы по силе', comboRows[0]?.reliable, true);
+check('на пустом входе связок нет', compareCombos([]).length, 0);
+check('лимит соблюдается', compareCombos(
+  [
+    sample('Привет! Посмотрел твой блог 40%, зацепило честно. Могу помочь?\n\nДа', 'replied'),
+    sample('Привет! Смотрел запуск 30%, сильно по факту. Давай обсудим?\n\nОк', 'call'),
+  ],
+  3,
+).length <= 3, true);
+
+// Взаимоисключающие концы одной шкалы не должны попадать в пары.
+check(
+  'короткий и длинный вместе не считаются',
+  compareCombos([sample('коротко', 'replied'), sample('а'.repeat(1200), 'sent')]).some(
+    (row) =>
+      (row.a === 'short' && row.b === 'long') || (row.a === 'long' && row.b === 'short'),
+  ),
+  false,
+);
+
+/* -------------------------------------------------------------------------- */
+section('Каркас оффера');
+
+const blueprint = buildBlueprint([
+  sample('Привет! Посмотрел твой блог, зацепило. Могу помочь?', 'replied'),
+  sample('Привет! Смотрел последний запуск, сильно. Давай обсудим?', 'call'),
+  sample('Привет! Смотрел твои сторис, круто. Интересно?', 'replied_no'),
+  sample('Предлагаю сотрудничество', 'sent'),
+  sample('Предлагаю услуги продюсера', 'sent'),
+  sample('Здравствуйте, предлагаю сотрудничество', 'sent'),
+  // Длинный текст нужен, чтобы длине было с чем сравниваться: на одной
+  // корзине вывод «пиши коротко» ничем не подкреплён.
+  sample('а'.repeat(1200), 'sent'),
+]);
+
+check('в каркасе все блоки порядка', blueprint.steps.length, BLUEPRINT_ORDER.length);
+check('порядок блоков сохраняется', blueprint.steps[0]?.id, BLUEPRINT_ORDER[0]);
+check(
+  'личное наблюдение попадает в «оставить»',
+  blueprint.steps.find((step) => step.id === 'personal')?.action,
+  'keep',
+);
+check(
+  'блок без данных помечается «проверить»',
+  blueprint.steps.find((step) => step.id === 'emoji')?.action,
+  'test',
+);
+check('есть что проверить следующим', Boolean(blueprint.experiment), true);
+check('целевая длина выбрана', blueprint.length, 'short');
+check('доверие в границах 0..100', blueprint.confidence >= 0 && blueprint.confidence <= 100, true);
+
+const emptyBlueprint = buildBlueprint([]);
+check('пустой вход — все блоки «проверить»', emptyBlueprint.steps.every((s) => s.action === 'test'), true);
+check('и доверия ноль', emptyBlueprint.confidence, 0);
+check('и длины нет', emptyBlueprint.length, null);
+check(
+  'каждому блоку каркаса есть подпись (ru)',
+  BLUEPRINT_ORDER.filter((id) => !ru.blueprint.lines[id]),
+  [],
+);
+check(
+  'каждому блоку каркаса есть подпись (en)',
+  BLUEPRINT_ORDER.filter((id) => !en.blueprint.lines[id]),
+  [],
+);
+
+/* -------------------------------------------------------------------------- */
+section('Переписка');
+
+const msg = (role: 'me' | 'them', text: string) => ({ role, text });
+
+check('мусор из базы не роняет разбор', parseMessages(null).length, 0);
+check('объект вместо массива тоже', parseMessages({ role: 'me' }).length, 0);
+check('пустые сообщения отбрасываются', parseMessages([{ role: 'me', text: '   ' }]).length, 0);
+check('неизвестная роль считается своей', parseMessages([{ role: 'x', text: 'а' }])[0]?.role, 'me');
+check('нормальная запись проходит', parseMessages([{ role: 'them', text: ' да ' }])[0]?.text, 'да');
+
+const pasted = parseChat(
+  'Родион, [16.08.2025 14:03]\nпривет\nсмотрел твой запуск\n\nЭксперт, [16.08.2025 14:10]\nда, слушаю\n\nРодион, [16.08.2025 14:11]\nмогу помочь?',
+);
+check('экспорт разбирается на блоки', pasted.length, 3);
+check('многострочное сообщение склеивается', pasted[0]?.text, 'привет\nсмотрел твой запуск');
+check('авторы вытаскиваются по порядку', authorsOf(pasted), ['Родион', 'Эксперт']);
+check('роли расставляются по выбранному автору', assignRoles(pasted, 'Родион').map((m) => m.role), ['me', 'them', 'me']);
+check('текст без заголовков не разбирается', parseChat('просто текст').length, 0);
+check('заголовок без тела ничего не добавляет', parseChat('Родион, [16.08.2025 14:03]').length, 0);
+
+const goodChat = [msg('me', 'привет, смотрел запуск'), msg('them', 'да'), msg('me', 'могу разобрать. интересно?')];
+const goodMetrics = chatMetrics(goodChat);
+check('сообщения считаются по ролям', [goodMetrics.mine, goodMetrics.theirs], [2, 1]);
+check('последним написал ты', goodMetrics.lastRole, 'me');
+check('и закончил вопросом', goodMetrics.endsWithQuestion, true);
+check('монолога нет', goodMetrics.longestMonologue, 1);
+check('здоровый диалог без замечаний', chatIssues(goodMetrics), []);
+check('и с полным баллом', chatScore(goodMetrics), 100);
+
+const monologue = [msg('me', 'раз?'), msg('me', 'два'), msg('me', 'три')];
+check('три подряд — монолог', chatMetrics(monologue).longestMonologue, 3);
+check('монолог попадает в замечания', chatIssues(chatMetrics(monologue)).includes('monologue'), true);
+
+const waiting = [msg('me', 'привет?'), msg('them', 'а что именно?')];
+check('ход за тобой — главное замечание', chatIssues(chatMetrics(waiting))[0], 'ballTheirs');
+
+const deadEnd = [msg('them', 'ок'), msg('me', 'понял, спасибо')];
+check('тупик распознаётся', chatIssues(chatMetrics(deadEnd)).includes('deadEnd'), true);
+check('и вопроса в переписке нет', chatIssues(chatMetrics(deadEnd)).includes('noQuestion'), true);
+
+const wall = [msg('me', 'а'.repeat(600) + '?'), msg('them', 'ок')];
+check('стена текста распознаётся', chatIssues(chatMetrics(wall)).includes('wall'), true);
+
+// Одно слово в ответ не делает нормальную реплику стеной: без абсолютного
+// порога это правило ругалось бы на любой живой диалог.
+check(
+  'короткий ответ не делает тебя стеной',
+  chatIssues(chatMetrics([msg('me', 'привет, смотрел запуск. интересно?'), msg('them', 'да')])).includes('wall'),
+  false,
+);
+check(
+  'два сообщения против одного — ещё не перекос',
+  chatIssues(chatMetrics([msg('me', 'раз?'), msg('them', 'да'), msg('me', 'два?')])),
+  [],
+);
+check('пустая переписка без замечаний', chatIssues(chatMetrics([])), []);
+check('и без балла', chatScore(chatMetrics([])), 0);
+check('балл не уходит ниже нуля', chatScore(chatMetrics(
+  [msg('me', 'а'.repeat(600)), msg('me', 'б'.repeat(600)), msg('me', 'в'.repeat(600)), msg('them', 'ок')],
+)) >= 0, true);
+
+const digest = digestChats([goodChat, monologue, waiting, []]);
+check('пустые переписки не считаются', digest.chats, 3);
+check('монолог посчитан', digest.counts.monologue, 1);
+check('ждущие ответа посчитаны', digest.waiting, 1);
+check('самая частая ошибка найдена', Boolean(digest.worst), true);
+check('средний балл в границах', digest.averageScore >= 0 && digest.averageScore <= 100, true);
+check('на пустом входе сводка пустая', digestChats([]).chats, 0);
+check('и худшей ошибки нет', digestChats([]).worst, null);
+check(
+  'у каждой ошибки есть название и что делать (ru)',
+  CHAT_ISSUE_IDS.filter((id) => !ru.chat.issues[id] || !ru.chat.fixes[id]),
+  [],
+);
+check(
+  'у каждой ошибки есть название и что делать (en)',
+  CHAT_ISSUE_IDS.filter((id) => !en.chat.issues[id] || !en.chat.fixes[id]),
+  [],
+);
+
+/* -------------------------------------------------------------------------- */
 section('Напоминания');
 
 check('время склеивается', composeDueAt('2026-08-16', '14:30'), '2026-08-16T14:30');
@@ -798,6 +1001,19 @@ const series = dailySeries(
 check('ряд по дням строится с нулями', series.map((p) => p.sent), [1, 0, 2]);
 check('ряд заканчивается сегодня', series[series.length - 1].date, '2026-08-16');
 
+// Окно «за всё время»: от первой рассылки до сегодня, обе границы включительно.
+const spanContacts = [c({ first_contact_date: '2026-08-01' }), c({ first_contact_date: '2026-08-16' })];
+check('окно считается от первой рассылки', spanDays(spanContacts, '2026-08-16', 365), 16);
+check('без контактов — неделя', spanDays([], '2026-08-16', 365), 7);
+check('короткая история всё равно неделя', spanDays([c({ first_contact_date: '2026-08-15' })], '2026-08-16', 365), 7);
+check('потолок соблюдается', spanDays([c({ first_contact_date: '2020-01-01' })], '2026-08-16', 365), 365);
+check('дата из будущего не ломает окно', spanDays([c({ first_contact_date: '2027-01-01' })], '2026-08-16', 365), 7);
+check(
+  'ряд за всё время накрывает первую рассылку',
+  dailySeries(spanContacts, '2026-08-16', spanDays(spanContacts, '2026-08-16', 365))[0].date,
+  '2026-08-01',
+);
+
 const grid = heatmap([c({ first_contact_date: '2026-08-16' })], '2026-08-16', 4);
 check('в карте четыре недели', grid.length, 4);
 check('в неделе семь дней', grid[0].length, 7);
@@ -859,9 +1075,6 @@ const noteRows = [
   note('4', '2026-08-01T10:00:00', 'idea'),
 ];
 
-check('цепочка заметок считается', noteStreak(noteRows, '2026-08-16'), 3);
-check('пустой сегодня не рвёт цепочку', noteStreak(noteRows, '2026-08-17'), 3);
-check('пропуск рвёт', noteStreak(noteRows, '2026-08-18'), 0);
 check('заметка за сегодня есть', hasNoteToday(noteRows, '2026-08-16'), true);
 check('за завтра нет', hasNoteToday(noteRows, '2026-08-17'), false);
 check('счёт по меткам', countByTag(noteRows).insight, 1);

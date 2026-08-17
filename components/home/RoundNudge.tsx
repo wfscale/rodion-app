@@ -65,10 +65,11 @@ export function RoundNudge({ sentToday, quota, total }: Props) {
         <span className="block text-[11px] font-bold uppercase tracking-wide text-white/35">
           {t.nudge.title}
         </span>
+        {/* Только цель и число. Всё, что можно приписать снизу, — это
+            объяснение механики, а объяснённая механика перестаёт работать. */}
         <span className={`mt-0.5 block text-sm font-bold leading-snug ${loud ? 'text-warn' : 'text-white'}`}>
           {text}
         </span>
-        <span className="mt-1 block text-xs leading-snug text-white/30">{t.nudge.hint}</span>
       </span>
 
       {/* Само число — то, ради чего блок и существует. */}

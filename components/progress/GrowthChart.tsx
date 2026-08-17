@@ -67,10 +67,24 @@ export function GrowthChart({ data, unit, color = '#FFFFFF' }: Props) {
 
   const total = useMemo(() => data.reduce((sum, p) => sum + p.value, 0), [data]);
   const peak = useMemo(() => Math.max(0, ...data.map((p) => p.value)), [data]);
-  const average = data.length > 0 ? Math.round((total / data.length) * 10) / 10 : 0;
+
+  /**
+   * Активные дни — те, в которые вообще что-то было.
+   *
+   * Среднее по всему окну врёт и демотивирует: 43 рассылки за 90 дней дают
+   * «в среднем 0,5», хотя в рабочий день их было по десять. Считать надо по
+   * дням, когда ты работал, — тогда число отвечает на вопрос «сколько я
+   * делаю, когда сажусь», а не «насколько я размазан по календарю».
+   */
+  const activeDays = useMemo(() => data.filter((p) => p.value > 0).length, [data]);
+  const average = activeDays > 0 ? Math.round((total / activeDays) * 10) / 10 : 0;
 
   // Подписей по оси X ровно столько, сколько влезает без наложения.
   const labelEvery = Math.max(1, Math.ceil(data.length / 6));
+
+  // На длинном окне подписи-числа идут не подряд, и «3 · 2 · 1» читается как
+  // бессмыслица — там нужен месяц. На коротком месяц только шумит.
+  const longWindow = data.length > 45;
 
   const move = (delta: number) =>
     setSelected((current) => Math.max(0, Math.min(data.length - 1, current + delta)));
@@ -218,23 +232,28 @@ export function GrowthChart({ data, unit, color = '#FFFFFF' }: Props) {
               className={i === selected ? 'fill-white/70' : 'fill-white/30'}
               style={{ fontSize: 9, fontWeight: 600 }}
             >
-              {/* Только число месяца: название не влезает, а от языка ось
-                  зависеть не должна — дата целиком видна над графиком. */}
-              {Number(point.date.slice(8, 10))}
+              {/* Цифрами, а не названием месяца: название не влезает, а от
+                  языка ось зависеть не должна — полная дата есть над графиком. */}
+              {longWindow
+                ? `${point.date.slice(8, 10)}.${point.date.slice(5, 7)}`
+                : Number(point.date.slice(8, 10))}
             </text>
           ) : null,
         )}
       </svg>
 
-      <div className="mt-3 grid grid-cols-3 gap-2 border-t border-divider pt-3">
+      {/* Четыре числа, а не три: «в среднем» без «активных дней» рядом
+          выглядит как ошибка — непонятно, на что делили. */}
+      <div className="mt-3 grid grid-cols-4 gap-1 border-t border-divider pt-3">
         {[
           { label: t.common.total, value: total },
           { label: t.common.peak, value: peak },
-          { label: t.common.average, value: average },
+          { label: t.progress.chartActiveDays, value: activeDays },
+          { label: t.progress.chartPerActiveDay, value: average },
         ].map((cell) => (
           <div key={cell.label} className="text-center">
             <p className="text-base font-extrabold tabular-nums">{cell.value}</p>
-            <p className="mt-0.5 text-[11px] leading-tight text-white/35">{cell.label}</p>
+            <p className="mt-0.5 text-[10px] leading-tight text-white/35">{cell.label}</p>
           </div>
         ))}
       </div>
