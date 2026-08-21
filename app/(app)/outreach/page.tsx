@@ -5,6 +5,7 @@ import { ChevronDown, Maximize2, Minimize2, Plus, Search, X } from 'lucide-react
 import { useMemo, useState } from 'react';
 import { useApp } from '@/components/AppProvider';
 import { GlassCard } from '@/components/GlassCard';
+import { ShieldCard } from '@/components/guard/ShieldCard';
 import { useLanguage } from '@/components/LanguageProvider';
 import { LockedFeature } from '@/components/LockedFeature';
 import { OfferCard } from '@/components/OfferCard';
@@ -244,6 +245,23 @@ export default function OutreachPage() {
         </div>
         <PulseBar pct={app.quota.pct} color={app.quota.closed ? '#64FF8C' : '#FFFFFF'} />
       </GlassCard>
+
+      {/*
+        Страховка серии — сразу под квотой, потому что решение «сегодня не
+        вытяну» принимается ровно в тот момент, когда смотришь на квоту.
+        Ниже, за списком экспертов, до неё дошли бы только специально.
+      */}
+      <ShieldCard
+        guard={app.guard}
+        sent={app.quota.sent}
+        quota={app.quota.quota}
+        streak={app.quota.streak}
+        onArm={() => void app.armShield()}
+        onDisarm={() => void app.disarmShield()}
+        onPause={(on) => void app.setPause(on)}
+        onAuto={(value) => void app.setShieldAuto(value)}
+        delay={3}
+      />
 
       {/*
         Аналитика стоит ВЫШЕ списка экспертов намеренно. Список растёт

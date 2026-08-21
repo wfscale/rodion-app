@@ -53,9 +53,16 @@ export function Toast({ toast }: ToastProps) {
           // Уезжает вверх и слегка ужимается — как будто втягивается обратно.
           exit={{ opacity: 0, y: -20, scale: 0.96, transition: { duration: 0.25, ease: 'easeIn' } }}
           transition={{ type: 'spring', stiffness: 420, damping: 30 }}
-          // pointer-events-none: тост ничего не делает по тапу и не должен
-          // перехватывать нажатия по таблице под ним.
-          className="pointer-events-none fixed inset-x-0 top-[calc(12px+env(safe-area-inset-top))] z-[86] flex justify-center px-4"
+          /*
+           * pointer-events-none: тост ничего не делает по тапу и не должен
+           * перехватывать нажатия по таблице под ним.
+           *
+           * z-89 — выше оверлея закрытой квоты (88) и ниже повышения уровня
+           * (90). Обычно тост и оверлей квоты не встречаются: каскад гасит
+           * тост в пользу оверлея. Исключение одно — возврат щита, и оно
+           * как раз совпадает с закрытием квоты по времени.
+           */
+          className="pointer-events-none fixed inset-x-0 top-[calc(12px+env(safe-area-inset-top))] z-[89] flex justify-center px-4"
         >
           <div
             role="status"

@@ -1,9 +1,10 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Flame } from 'lucide-react';
+import { Flame, Pause, Shield } from 'lucide-react';
 import { GlassCard } from '@/components/GlassCard';
 import { useLanguage } from '@/components/LanguageProvider';
+import type { DayGuard } from '@/lib/shield';
 
 type StreakBlockProps = {
   streak: number;
@@ -80,9 +81,34 @@ export function StreakBlock({
   );
 }
 
-/** Компактный индикатор серии для хедера главной. */
-export function StreakPill({ streak }: { streak: number }) {
+/**
+ * Компактный индикатор серии для хедера главной.
+ *
+ * Значок отвечает на единственный вопрос, который к серии и задают: она
+ * сейчас в безопасности или нет. Огонь — идёт своим ходом, щит — день
+ * закрыт зарядом, пауза — счёт остановлен намеренно. Число при этом одно
+ * и то же: защита сохраняет серию, а не подменяет её.
+ */
+export function StreakPill({ streak, guard = null }: { streak: number; guard?: DayGuard }) {
   const active = streak > 0;
+
+  if (guard === 'pause') {
+    return (
+      <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-glass-border bg-white/[0.05] px-3 py-1.5">
+        <Pause size={15} strokeWidth={2.4} className="text-white/45" />
+        <span className="text-sm font-extrabold text-white/55">{streak}</span>
+      </div>
+    );
+  }
+
+  if (guard === 'shield') {
+    return (
+      <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-[rgba(100,255,140,0.32)] bg-[rgba(100,255,140,0.10)] px-3 py-1.5">
+        <Shield size={15} strokeWidth={2.2} className="text-success" fill="currentColor" />
+        <span className="text-sm font-extrabold text-white">{streak}</span>
+      </div>
+    );
+  }
 
   return (
     <div

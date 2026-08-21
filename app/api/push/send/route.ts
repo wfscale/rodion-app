@@ -56,7 +56,9 @@ export async function POST(request: NextRequest) {
 
   const { data: profiles } = await admin
     .from('profiles')
-    .select('id, current_quota, quota_streak, timezone')
+    // Звёздочка, а не список колонок: щит появился в migration-v7, и запрос
+    // с именем ещё не созданной колонки уронил бы рассылку всем.
+    .select('*')
     .eq('push_enabled', true);
 
   if (!profiles || profiles.length === 0) {
@@ -93,6 +95,10 @@ export async function POST(request: NextRequest) {
       sentYesterday: yesterdayRes.count ?? 0,
       quotaYesterday: profile.current_quota ?? 5,
       streak: profile.quota_streak ?? 0,
+      // Колонок может не быть, пока не прогнана migration-v7: тогда оба
+      // флага просто false и уведомления работают как раньше.
+      paused: Boolean(profile.pause_start),
+      shielded: profile.shield_date === today,
     });
 
     if (!message) {

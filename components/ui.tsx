@@ -374,6 +374,54 @@ export function Badge({
   );
 }
 
+/**
+ * Переключатель «вкл / выкл».
+ *
+ * Подпись и пояснение живут внутри: без них тумблер на стекле читается как
+ * украшение, а не как настройка, которую можно тронуть.
+ */
+export function Switch({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-base font-bold">{label}</p>
+        {hint && <p className="mt-0.5 text-sm leading-snug text-muted">{hint}</p>}
+      </div>
+      {/* Дорожка нарисована внутри: сама кнопка обязана быть 44px в высоту,
+          иначе в неё не попасть большим пальцем. */}
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={() => onChange(!checked)}
+        className="relative flex h-11 w-14 shrink-0 items-center"
+      >
+        <span
+          className={`h-8 w-14 rounded-full transition-colors ${
+            checked ? 'bg-white' : 'bg-white/15'
+          }`}
+        />
+        <span
+          className={`absolute top-1/2 h-6 w-6 -translate-y-1/2 rounded-full transition-all ${
+            checked ? 'left-7 bg-ink' : 'left-1 bg-white/60'
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
 export function EmptyState({ text, icon }: { text: string; icon?: ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 px-6 py-14 text-center">

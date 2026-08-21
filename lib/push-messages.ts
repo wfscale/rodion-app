@@ -19,6 +19,10 @@ export type PushInput = {
   quotaYesterday: number;
   /** Серия закрытых дней. */
   streak: number;
+  /** Человек на привале: счёт остановлен намеренно. */
+  paused?: boolean;
+  /** На сегодня взведён щит: день уже закрыт зарядом. */
+  shielded?: boolean;
 };
 
 export type PushMessage = {
@@ -34,7 +38,39 @@ export type PushMessage = {
  * своё сделал, — верный способ научить его игнорировать уведомления.
  */
 export function buildPush(input: PushInput): PushMessage | null {
-  const { slot, sent, quota, sentYesterday, quotaYesterday, streak } = input;
+  const {
+    slot,
+    sent,
+    quota,
+    sentYesterday,
+    quotaYesterday,
+    streak,
+    paused = false,
+    shielded = false,
+  } = input;
+
+  /*
+   * На привале про квоту молчим совсем.
+   *
+   * Человек остановился осознанно и знает об этом. Догонять его теми же
+   * «садись, полдня прошло» значит превращать паузу в наказание — и в
+   * следующий раз он просто не станет её включать, а вместо этого сорвётся.
+   * Ночной чекин режима остаётся: к рассылкам он отношения не имеет.
+   */
+  if (paused && slot !== 'night') return null;
+
+  // День уже закрыт зарядом — торопить некуда, но вечером стоит напомнить,
+  // что закрытая квота вернёт щит обратно в запас.
+  if (shielded && (slot === 'midday' || slot === 'morning')) return null;
+
+  if (shielded && slot === 'evening' && sent < quota) {
+    return {
+      title: 'Твой рост',
+      body: `День под щитом. Закроешь ${quota} — заряд вернётся.`,
+      tag: 'quota',
+      url: '/',
+    };
+  }
 
   if (slot === 'morning') {
     const done = sentYesterday >= quotaYesterday && quotaYesterday > 0;

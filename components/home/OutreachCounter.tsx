@@ -19,6 +19,8 @@ type OutreachCounterProps = {
   nextQuota: number;
   /** Овердрайв (18-й уровень): вторая, двойная планка дня. */
   showOverdrive?: boolean;
+  /** Привал: счёт остановлен намеренно, квота сегодня не давит. */
+  paused?: boolean;
 };
 
 /**
@@ -34,11 +36,19 @@ export function OutreachCounter({
   daysToGrow,
   nextQuota,
   showOverdrive = false,
+  paused = false,
 }: OutreachCounterProps) {
   const { t, tf } = useLanguage();
 
   const pct = quotaPct(sent, quota);
   const done = sent >= quota;
+  /*
+   * На привале планка и процент не показываются вовсе: полоса, застывшая на
+   * нуле, — это упрёк, а привал существует ровно для того, чтобы упрёка не
+   * было. Но если норму на привале всё-таки закрыли, экран возвращается к
+   * обычному виду: работа заслуживает своей награды в любом режиме.
+   */
+  const onHold = paused && !done;
   // 80%+ — бар начинает мягко пульсировать: «ты почти там».
   const nearGoal = !done && pct >= 80;
 
@@ -79,23 +89,25 @@ export function OutreachCounter({
       </div>
 
       <p className="mt-2 text-center text-base font-semibold text-muted">
-        {tf(t.home.ofQuota, { n: quota })}
+        {onHold ? t.guard.quotaPaused : tf(t.home.ofQuota, { n: quota })}
       </p>
 
-      <motion.div
-        className="mt-4 flex items-center gap-3"
-        animate={nearGoal ? { opacity: [1, 0.55, 1] } : { opacity: 1 }}
-        transition={
-          nearGoal
-            ? { duration: 2, repeat: Infinity, ease: 'easeInOut' }
-            : { duration: 0.2 }
-        }
-      >
-        <ProgressBar pct={pct} height={8} className="flex-1" />
-        <span className="w-11 shrink-0 text-right text-sm font-bold tabular-nums text-white/60">
-          {pct}%
-        </span>
-      </motion.div>
+      {!onHold && (
+        <motion.div
+          className="mt-4 flex items-center gap-3"
+          animate={nearGoal ? { opacity: [1, 0.55, 1] } : { opacity: 1 }}
+          transition={
+            nearGoal
+              ? { duration: 2, repeat: Infinity, ease: 'easeInOut' }
+              : { duration: 0.2 }
+          }
+        >
+          <ProgressBar pct={pct} height={8} className="flex-1" />
+          <span className="w-11 shrink-0 text-right text-sm font-bold tabular-nums text-white/60">
+            {pct}%
+          </span>
+        </motion.div>
+      )}
 
       {showOverdrive && done && (
         <motion.div
@@ -143,11 +155,13 @@ export function OutreachCounter({
           </span>
         </div>
 
-        <p className="mt-2 text-center text-xs text-white/35">
-          {daysToGrow > 0
-            ? tf(t.home.quotaGrows, { n: daysToGrow, q: nextQuota })
-            : t.home.quotaMax}
-        </p>
+        {!onHold && (
+          <p className="mt-2 text-center text-xs text-white/35">
+            {daysToGrow > 0
+              ? tf(t.home.quotaGrows, { n: daysToGrow, q: nextQuota })
+              : t.home.quotaMax}
+          </p>
+        )}
       </div>
     </GlassCard>
   );

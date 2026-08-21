@@ -95,3 +95,34 @@ export function daysSince(iso: string, today: string): number {
 export function cycleDay(cycleStart: string, today: string): number {
   return Math.max(1, daysBetween(today, cycleStart) + 1);
 }
+
+/**
+ * Сколько минут осталось до конца логического дня.
+ *
+ * На вход — текущий момент строкой 'YYYY-MM-DDTHH:mm' (тот же формат, что
+ * у напоминаний): так функция остаётся чистой и пересчитывается ровно тогда,
+ * когда провайдер двигает минутную стрелку, а не на каждой отрисовке.
+ * В 4:00 день сгорает и начинается новый — значит остаётся полные сутки.
+ */
+export function minutesUntilDayEnd(now: string): number {
+  const minutes = Number(now.slice(11, 13)) * 60 + Number(now.slice(14, 16));
+  const rollover = DAY_ROLLOVER_HOUR * 60;
+  return minutes < rollover ? rollover - minutes : 1440 - minutes + rollover;
+}
+
+/** «5 ч 12 мин» / «5h 12m». Меньше часа — только минуты. */
+export function formatTimeLeft(minutes: number, lang: 'ru' | 'en'): string {
+  const total = Math.max(0, Math.round(minutes));
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+
+  // В русском между числом и единицей пробел, в английском — нет: «5 ч 12 мин»
+  // против «5h 12m».
+  const gap = lang === 'ru' ? ' ' : '';
+  const hourUnit = lang === 'ru' ? 'ч' : 'h';
+  const minuteUnit = lang === 'ru' ? 'мин' : 'm';
+
+  if (h === 0) return `${m}${gap}${minuteUnit}`;
+  if (m === 0) return `${h}${gap}${hourUnit}`;
+  return `${h}${gap}${hourUnit} ${m}${gap}${minuteUnit}`;
+}

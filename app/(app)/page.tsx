@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '@/components/AppProvider';
 import { GlassCard, CardTitle } from '@/components/GlassCard';
+import { BurnTimer } from '@/components/guard/BurnTimer';
 import { ActivityFeed } from '@/components/home/ActivityFeed';
 import { DailyTasks } from '@/components/home/DailyTasks';
 import { HabitsBlock } from '@/components/home/HabitsBlock';
@@ -71,6 +72,7 @@ export default function HomePage() {
       {!focusOn && (
         <HomeHeader
           streak={profile.quota_streak ?? 0}
+          guard={app.guard.today}
           chainDays={app.chain}
           level={app.levelInfo.level}
           levelName={app.levelInfo.name}
@@ -91,10 +93,28 @@ export default function HomePage() {
         daysToGrow={app.quota.daysToGrow}
         nextQuota={app.quota.next}
         showOverdrive={app.can('overdrive')}
+        paused={app.guard.today === 'pause'}
       />
 
-      {/* Ровное число — единственная цель, которая никогда не кончается. */}
-      <RoundNudge sentToday={app.quota.sent} quota={app.quota.quota} total={app.sentTotal} />
+      {/*
+        Сколько времени у дня осталось. Стоит сразу под счётчиком и исчезает,
+        как только квота закрыта: подгонять человека, который своё сделал,
+        нечем — а строка, которая висит всегда, перестаёт читаться вообще.
+      */}
+      <BurnTimer
+        guard={app.guard}
+        sent={app.quota.sent}
+        quota={app.quota.quota}
+        streak={profile.quota_streak ?? 0}
+        onArm={() => void app.armShield()}
+      />
+
+      {/* Ровное число — единственная цель, которая никогда не кончается.
+          На привале молчит: пока квота не закрыта, надж говорит именно про
+          неё, а это ровно то давление, ради снятия которого привал и есть. */}
+      {!(app.guard.today === 'pause' && !app.quota.closed) && (
+        <RoundNudge sentToday={app.quota.sent} quota={app.quota.quota} total={app.sentTotal} />
+      )}
 
       <QuickAddOutreach today={app.today} onAdd={handleQuickAdd} busy={adding} />
 

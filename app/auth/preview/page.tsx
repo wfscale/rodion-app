@@ -15,6 +15,8 @@ import { useState } from 'react';
 import { ActivityFeed } from '@/components/home/ActivityFeed';
 import { DailyTasks } from '@/components/home/DailyTasks';
 import { HabitsBlock } from '@/components/home/HabitsBlock';
+import { BurnTimer } from '@/components/guard/BurnTimer';
+import { ShieldCard } from '@/components/guard/ShieldCard';
 import { HomeHeader } from '@/components/home/HomeHeader';
 import { OutreachCounter } from '@/components/home/OutreachCounter';
 import { QuickAddOutreach } from '@/components/home/QuickAddOutreach';
@@ -42,6 +44,7 @@ import { ReminderList } from '@/components/reminders/ReminderList';
 import { BottomNav } from '@/components/BottomNav';
 import type { ChatMessage } from '@/lib/conversation';
 import { EMPTY_FILTERS, nicheOptions, type OutreachFilters as Filters } from '@/lib/outreach-filter';
+import type { GuardView } from '@/lib/shield';
 import type { ActivityEntry, DailyTask, OutreachContact, Reminder } from '@/lib/types';
 
 const TODAY = '2026-08-13';
@@ -134,6 +137,20 @@ const OFFERS = [
   { content: 'Здравствуйте, готов обсудить совместную работу', result: 'sent' },
 ];
 
+/** Страховка серии: базовое состояние, от которого пляшут все витрины ниже. */
+const guardView = (over: Partial<GuardView> = {}): GuardView => ({
+  ready: true,
+  charges: 3,
+  regenIn: 0,
+  auto: true,
+  today: null,
+  pauseDay: 0,
+  minutesLeft: 312,
+  burn: 'safe',
+  canArm: true,
+  ...over,
+});
+
 const CHART = Array.from({ length: 14 }, (_, i) => ({
   date: `2026-07-${String(31 - 13 + i).padStart(2, '0')}`,
   value: [0, 2, 5, 3, 8, 12, 7, 0, 4, 9, 15, 11, 6, 10][i],
@@ -152,6 +169,7 @@ export default function PreviewPage() {
       <div className="pb-content mx-auto w-full max-w-lg space-y-4 px-4 pt-4 md:max-w-5xl md:px-6">
         <HomeHeader
           streak={3}
+          guard="shield"
           chainDays={5}
           level={2}
           levelName="Охотник"
@@ -164,6 +182,41 @@ export default function PreviewPage() {
         />
 
         <OutreachCounter sent={12} quota={5} record={3} daysToGrow={3} nextQuota={8} showOverdrive />
+
+        {/* Тот же счётчик на привале: планки и процента нет, число осталось. */}
+        <OutreachCounter sent={0} quota={5} record={3} daysToGrow={3} nextQuota={8} paused />
+
+        {/* Таймер сгорания дня во всех четырёх состояниях: спокойное время,
+            жёлтый вечер, красный час с аварийной кнопкой, щит и привал. */}
+        <BurnTimer guard={guardView()} sent={2} quota={5} streak={7} onArm={() => undefined} />
+        <BurnTimer
+          guard={guardView({ minutesLeft: 214, burn: 'warn' })}
+          sent={2}
+          quota={5}
+          streak={7}
+          onArm={() => undefined}
+        />
+        <BurnTimer
+          guard={guardView({ minutesLeft: 47, burn: 'danger' })}
+          sent={2}
+          quota={5}
+          streak={7}
+          onArm={() => undefined}
+        />
+        <BurnTimer
+          guard={guardView({ today: 'shield', charges: 2, regenIn: 4, canArm: false })}
+          sent={2}
+          quota={5}
+          streak={7}
+          onArm={() => undefined}
+        />
+        <BurnTimer
+          guard={guardView({ today: 'pause', pauseDay: 3, canArm: false })}
+          sent={0}
+          quota={5}
+          streak={12}
+          onArm={() => undefined}
+        />
 
         {/* Три состояния наджа: до квоты, до ровного дня, до ровного счёта. */}
         <RoundNudge sentToday={3} quota={5} total={22} />
@@ -222,6 +275,65 @@ export default function PreviewPage() {
           highlightId={null}
           sort={sort}
           onSortChange={setSort}
+        />
+
+        {/* Карточка щита: обычный вечер, взведённый щит, пустой запас, привал. */}
+        <ShieldCard
+          guard={guardView({ minutesLeft: 214, burn: 'warn' })}
+          sent={2}
+          quota={5}
+          streak={7}
+          onArm={() => undefined}
+          onDisarm={() => undefined}
+          onPause={() => undefined}
+          onAuto={() => undefined}
+        />
+        <ShieldCard
+          guard={guardView({ today: 'shield', charges: 2, regenIn: 4, canArm: false })}
+          sent={2}
+          quota={5}
+          streak={7}
+          onArm={() => undefined}
+          onDisarm={() => undefined}
+          onPause={() => undefined}
+          onAuto={() => undefined}
+        />
+        <ShieldCard
+          guard={guardView({
+            charges: 0,
+            regenIn: 2,
+            auto: false,
+            minutesLeft: 47,
+            burn: 'danger',
+            canArm: false,
+          })}
+          sent={4}
+          quota={5}
+          streak={7}
+          onArm={() => undefined}
+          onDisarm={() => undefined}
+          onPause={() => undefined}
+          onAuto={() => undefined}
+        />
+        <ShieldCard
+          guard={guardView({ today: 'pause', pauseDay: 3, charges: 1, regenIn: 4, canArm: false })}
+          sent={0}
+          quota={5}
+          streak={12}
+          onArm={() => undefined}
+          onDisarm={() => undefined}
+          onPause={() => undefined}
+          onAuto={() => undefined}
+        />
+        <ShieldCard
+          guard={guardView({ ready: false })}
+          sent={0}
+          quota={5}
+          streak={0}
+          onArm={() => undefined}
+          onDisarm={() => undefined}
+          onPause={() => undefined}
+          onAuto={() => undefined}
         />
 
         <ModeBlock counters={{ porn: 16, mb: 14, sugar: 15 }} />
