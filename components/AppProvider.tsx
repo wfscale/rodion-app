@@ -18,10 +18,10 @@ import { parseMessages, type ChatMessage } from '@/lib/conversation';
 import { FirstEventOverlay, type FirstEventKind } from '@/components/overlays/FirstEventOverlay';
 import { LevelUpOverlay } from '@/components/overlays/LevelUpOverlay';
 import { QuotaClosedOverlay } from '@/components/overlays/QuotaClosedOverlay';
-import { Toast, type ToastData } from '@/components/overlays/Toast';
+import { Toast, type ToastData, type ToastTone } from '@/components/overlays/Toast';
 import { useLanguage } from '@/components/LanguageProvider';
-import { cycleDay, formatDayMonth, getLogicalDate, shiftDate } from '@/lib/date';
-import { celebrate } from '@/lib/feedback';
+import { cycleDay, formatDayMonth, getLogicalDate, minutesUntilDayEnd, shiftDate } from '@/lib/date';
+import { celebrate, vibrate } from '@/lib/feedback';
 import {
   isReplyStatus,
   onOutreachAdded,
@@ -31,6 +31,21 @@ import {
 } from '@/lib/gamification';
 import { calculateQuota, daysUntilQuotaGrows, nextQuota, quotaPct, rollChain, rollQuotaForNewDay } from '@/lib/quota';
 import { showLocalNotification } from '@/lib/push-client';
+import {
+  armShield as armShieldState,
+  burnLevel,
+  canArmShield,
+  daysUntilShield,
+  disarmShield as disarmShieldState,
+  endPause,
+  guardFor,
+  pauseDay,
+  rollGuardForNewDay,
+  startPause,
+  SHIELD_MAX,
+  type GuardState,
+  type GuardView,
+} from '@/lib/shield';
 import { activeCount, isActive, nowLocal, urgencyOf } from '@/lib/reminders';
 import { createClient } from '@/lib/supabase/client';
 import { syncSheets } from '@/lib/sheets-client';
@@ -114,6 +129,8 @@ type AppContextValue = {
   conversationsReady: boolean;
 
   quota: QuotaState;
+  /** Состояние страховки серии: заряды щита, привал, таймер сгорания дня. */
+  guard: GuardView;
   chain: number;
   levelInfo: LevelInfo;
   cycleDayNumber: number;
@@ -146,6 +163,15 @@ type AppContextValue = {
   saveDay: (patch: Partial<DailyLog>) => Promise<void>;
 
   submitModeCheckin: (held: { porn: boolean; mb: boolean; sugar: boolean }) => Promise<void>;
+
+  /** Взвести щит на сегодня — день не порвёт серию. */
+  armShield: () => Promise<void>;
+  /** Снять щит с сегодняшнего дня, заряд вернётся в запас. */
+  disarmShield: () => Promise<void>;
+  /** Уйти на привал или вернуться в работу. */
+  setPause: (on: boolean) => Promise<void>;
+  /** Тратить заряд самому на границе суток. */
+  setShieldAuto: (value: boolean) => Promise<void>;
 
   updateProfile: (patch: Partial<Profile>) => Promise<void>;
   awardXp: (amount: number, reason: string, onceKey?: string) => Promise<number>;
@@ -187,6 +213,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [remindersReady, setRemindersReady] = useState(true);
   const [conversationsReady, setConversationsReady] = useState(true);
+  const [shieldReady, setShieldReady] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -205,6 +232,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const quotaRolled = useRef<string | null>(null);
   /** Ключи, по которым уже пытались начислить — чтобы не слать лишние запросы. */
   const attemptedKeys = useRef<Set<string>>(new Set());
+
+  /**
+   * Показать тост и убрать его через заданное время.
+   *
+   * Длительность приходит снаружи: подтверждение рутинного действия должно
+   * успеть уйти до следующего, а сообщение про сгоревшую ночью серию —
+   * дождаться, пока его прочитают.
+   */
+  const showToast = useCallback((text: string, tone: ToastTone = 'normal', ms = 2400) => {
+    setToast({ id: Date.now() + Math.random(), text, tone });
+    setTimeout(() => setToast(null), ms);
+  }, []);
 
   /* ------------------------------------------------------------------ */
   /*  Загрузка                                                           */
@@ -289,6 +328,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     setProfile(loadedProfile);
+
+    // Колонки щита появились в migration-v7. Пока её не прогнали, их просто
+    // нет в строке — приложение живёт по старым правилам, без страховки.
+    setShieldReady('shield_charges' in (loadedProfile as object));
 
     const loadedContacts = (contactsRes.data as OutreachContact[]) ?? [];
 
@@ -479,6 +522,56 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [profile?.current_quota, profile?.quota_streak, profile?.daily_record, sentToday]);
 
+  /** Сколько рассылок пришлось на каждую дату — вход для разбора дней. */
+  const sentByDate = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const contact of contacts) {
+      const date = contact.first_contact_date;
+      if (date) map[date] = (map[date] ?? 0) + 1;
+    }
+    return map;
+  }, [contacts]);
+
+  /** Страховка серии, как она лежит в профиле. */
+  const guardState = useMemo<GuardState>(
+    () => ({
+      charges: profile?.shield_charges ?? 0,
+      progress: profile?.shield_progress ?? 0,
+      shieldDate: profile?.shield_date ?? null,
+      auto: profile?.shield_auto ?? true,
+      pauseStart: profile?.pause_start ?? null,
+    }),
+    [
+      profile?.shield_charges,
+      profile?.shield_progress,
+      profile?.shield_date,
+      profile?.shield_auto,
+      profile?.pause_start,
+    ],
+  );
+
+  /**
+   * То же состояние, но уже посчитанное для экрана.
+   *
+   * Таймер сгорания дня пересчитывается вместе с `now`, то есть раз в
+   * полминуты, а не на каждой отрисовке: минутная точность здесь — потолок
+   * полезного, а лишние пересчёты дёргали бы всё дерево.
+   */
+  const guard = useMemo<GuardView>(() => {
+    const minutesLeft = minutesUntilDayEnd(now);
+    return {
+      ready: shieldReady,
+      charges: guardState.charges,
+      regenIn: daysUntilShield(guardState),
+      auto: guardState.auto,
+      today: shieldReady ? guardFor(guardState, today) : null,
+      pauseDay: guardState.pauseStart ? pauseDay(guardState.pauseStart, today) : 0,
+      minutesLeft,
+      burn: burnLevel(minutesLeft),
+      canArm: shieldReady && canArmShield(guardState, today),
+    };
+  }, [guardState, shieldReady, today, now]);
+
   /** Дошедшие до адресата рассылки за всё время — база для вех. */
   const sentTotal = useMemo(
     () => contacts.filter((c) => SENT_STATUSES.includes(c.status)).length,
@@ -522,16 +615,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (notifiedReminders.current.has(reminder.id)) continue;
       notifiedReminders.current.add(reminder.id);
 
-      setToast({
-        id: Date.now() + Math.random(),
-        text: `⏰ ${reminder.title}`,
-        tone: 'round',
-      });
-      setTimeout(() => setToast(null), 4000);
-
+      showToast(`⏰ ${reminder.title}`, 'round', 4000);
       void showLocalNotification(t.reminders.notificationTitle, reminder.title);
     }
-  }, [reminders, now, remindersReady, loading, t.reminders.notificationTitle]);
+  }, [reminders, now, remindersReady, loading, showToast, t.reminders.notificationTitle]);
 
   const cycleDayNumber = useMemo(
     () => (profile ? cycleDay(profile.cycle_start_date, today) : 1),
@@ -541,7 +628,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const todayLog = useMemo(() => logs.find((l) => l.date === today) ?? null, [logs, today]);
 
   /* ------------------------------------------------------------------ */
-  /*  Пересчёт квоты и цепочки на новый день                             */
+  /*  Пересчёт квоты и страховки на новый день                           */
   /* ------------------------------------------------------------------ */
 
   useEffect(() => {
@@ -554,25 +641,129 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     quotaRolled.current = today;
 
-    const yesterday = shiftDate(today, -1);
-    const yesterdaySent = contacts.filter((c) => c.first_contact_date === yesterday).length;
+    // Пока migration-v7 не прогнана, колонок щита нет — судим по-старому,
+    // одним вчерашним днём.
+    if (!shieldReady) {
+      const rolled = rollQuotaForNewDay({
+        quotaStreak: profile.quota_streak ?? 0,
+        quotaLastDate: profile.quota_last_date,
+        yesterdaySent: sentByDate[shiftDate(today, -1)] ?? 0,
+        yesterdayQuota: profile.current_quota ?? 5,
+        today,
+      });
 
-    const rolled = rollQuotaForNewDay({
-      quotaStreak: profile.quota_streak ?? 0,
-      quotaLastDate: profile.quota_last_date,
-      yesterdaySent,
-      yesterdayQuota: profile.current_quota ?? 5,
+      if (rolled.changed) {
+        void updateProfile({
+          quota_streak: rolled.quotaStreak,
+          current_quota: rolled.currentQuota,
+          quota_last_date: today,
+        });
+      }
+      return;
+    }
+
+    const rolled = rollGuardForNewDay({
       today,
+      lastDate: profile.quota_last_date,
+      quota: profile.current_quota ?? 5,
+      quotaStreak: profile.quota_streak ?? 0,
+      sentByDate,
+      guard: guardState,
     });
 
-    if (rolled.changed) {
-      void updateProfile({
-        quota_streak: rolled.quotaStreak,
-        current_quota: rolled.currentQuota,
-        quota_last_date: today,
-      });
+    if (!rolled.changed) return;
+
+    void updateProfile({
+      quota_streak: rolled.quotaStreak,
+      current_quota: rolled.currentQuota,
+      quota_last_date: today,
+      shield_charges: rolled.guard.charges,
+      shield_progress: rolled.guard.progress,
+      shield_date: rolled.guard.shieldDate,
+      pause_start: rolled.guard.pauseStart,
+    });
+
+    /*
+     * Что случилось за ночь, человек обязан узнать в первую же секунду.
+     * Незамеченная страховка — это та же потерянная серия, только с
+     * отсрочкой: он не поймёт, почему заряд исчез, и перестанет ей верить.
+     * Тост, как и везде, ровно один — самый важный из случившегося.
+     */
+    if (rolled.brokenAt) {
+      showToast(t.guard.toastBroken, 'normal', 4200);
+    } else if (rolled.spent.length === 1) {
+      showToast(`🛡 ${tf(t.guard.toastSpentOne, { n: rolled.quotaStreak })}`, 'round', 4200);
+    } else if (rolled.spent.length > 1) {
+      showToast(`🛡 ${tf(t.guard.toastSpentMany, { n: rolled.quotaStreak })}`, 'round', 4200);
+    } else if (rolled.refunded.length > 0) {
+      showToast(`🛡 ${t.guard.toastRefund}`, 'round', 3600);
+    } else if (rolled.earned > 0) {
+      showToast(`🛡 ${t.guard.toastEarned}`, 'record', 3600);
     }
-  }, [profile, contacts, today, loading, updateProfile]);
+  }, [
+    profile, today, loading, updateProfile, shieldReady, sentByDate, guardState,
+    showToast, tf, t.guard,
+  ]);
+
+  /* ------------------------------------------------------------------ */
+  /*  Щит и привал                                                       */
+  /* ------------------------------------------------------------------ */
+
+  const armShield = useCallback(async () => {
+    if (!profile || !shieldReady) return;
+
+    const next = armShieldState(guardState, today);
+    if (next === guardState) return;
+
+    vibrate(18);
+    await updateProfile({ shield_charges: next.charges, shield_date: next.shieldDate });
+    showToast(`🛡 ${t.guard.toastArmed}`, 'round', 2800);
+  }, [profile, shieldReady, guardState, today, updateProfile, showToast, t.guard.toastArmed]);
+
+  const disarmShield = useCallback(async () => {
+    if (!profile || !shieldReady) return;
+
+    const next = disarmShieldState(guardState, today);
+    if (next === guardState) return;
+
+    await updateProfile({ shield_charges: next.charges, shield_date: next.shieldDate });
+    showToast(t.guard.toastDisarmed, 'normal', 2400);
+  }, [profile, shieldReady, guardState, today, updateProfile, showToast, t.guard.toastDisarmed]);
+
+  const setPause = useCallback(
+    async (on: boolean) => {
+      if (!profile || !shieldReady) return;
+
+      const next = on ? startPause(guardState, today) : endPause(guardState);
+      if (next === guardState) return;
+
+      const streak = profile.quota_streak ?? 0;
+
+      await updateProfile({
+        pause_start: next.pauseStart,
+        // Взведённый щит привал возвращает: день он закрывает и так.
+        shield_charges: next.charges,
+        shield_date: next.shieldDate,
+      });
+
+      showToast(
+        on
+          ? tf(t.guard.toastPauseOn, { n: streak })
+          : tf(t.guard.toastPauseOff, { n: streak }),
+        'round',
+        3200,
+      );
+    },
+    [profile, shieldReady, guardState, today, updateProfile, showToast, tf, t.guard],
+  );
+
+  const setShieldAuto = useCallback(
+    async (value: boolean) => {
+      if (!profile || !shieldReady) return;
+      await updateProfile({ shield_auto: value });
+    },
+    [profile, shieldReady, updateProfile],
+  );
 
   /* ------------------------------------------------------------------ */
   /*  Проигрывание каскада                                               */
@@ -718,6 +909,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
           await updateProfile({ chain_days: chain, chain_last_date: today });
         }
+
+        /*
+         * Закрытая квота сильнее щита: день засчитан работой, заряд ни за
+         * что не потрачен и возвращается в запас сразу — ждать границы
+         * суток незачем, вопрос уже решён.
+         *
+         * Привал так не снимается: в него входят осознанно и выходят
+         * кнопкой. Приложение, которое само отменяет выбранный человеком
+         * режим, перестаёт быть предсказуемым.
+         */
+        if (shieldReady && profile && profile.shield_date === today && sentAfter >= quota.quota) {
+          await updateProfile({
+            shield_charges: Math.min(SHIELD_MAX, (profile.shield_charges ?? 0) + 1),
+            shield_date: null,
+          });
+          showToast(`🛡 ${t.guard.toastRefund}`, 'round', 3400);
+        }
       }
 
       void syncSheets();
@@ -725,7 +933,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [
       supabase, user, today, sentToday, sentTotal, quota.quota, quota.record, levelInfo.level,
-      logActivity, runEvents, profile, updateProfile,
+      logActivity, runEvents, profile, updateProfile, shieldReady, showToast,
+      t.guard.toastRefund,
     ],
   );
 
@@ -1132,6 +1341,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       remindersDue,
       conversationsReady,
       quota,
+      guard,
       chain: profile?.chain_days ?? 0,
       levelInfo,
       cycleDayNumber,
@@ -1154,6 +1364,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toggleHabit,
       saveDay,
       submitModeCheckin,
+      armShield,
+      disarmShield,
+      setPause,
+      setShieldAuto,
       updateProfile,
       awardXp,
       reload: load,
@@ -1162,11 +1376,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [
       user, profile, today, now, loading, error, contacts, activity, tasks, logs, todayLog,
       reminders, remindersReady, remindersDue, conversationsReady,
-      quota, levelInfo, cycleDayNumber, sentTotal, can,
+      quota, guard, levelInfo, cycleDayNumber, sentTotal, can,
       addContact, updateContact, setStatus, deleteContact, touchContact, muteContact,
       saveConversation,
       addTask, toggleTask, deleteTask, addReminder, updateReminder, toggleReminder, deleteReminder,
-      toggleHabit, saveDay, submitModeCheckin, updateProfile, awardXp, load, signOut,
+      toggleHabit, saveDay, submitModeCheckin,
+      armShield, disarmShield, setPause, setShieldAuto,
+      updateProfile, awardXp, load, signOut,
     ],
   );
 

@@ -104,7 +104,28 @@ import { countByTag, hasNoteToday, resurface } from '@/lib/notes-stats';
 import { niceMax, smoothPath } from '@/lib/chart';
 import { statsForWeek, missingWeeks } from '@/lib/reports';
 import { buildPush } from '@/lib/push-messages';
-import { getLogicalDate, weekDates, daysBetween } from '@/lib/date';
+import {
+  daysBetween,
+  formatTimeLeft,
+  getLogicalDate,
+  minutesUntilDayEnd,
+  weekDates,
+} from '@/lib/date';
+import {
+  armShield,
+  burnLevel,
+  canArmShield,
+  daysUntilShield,
+  disarmShield,
+  endPause,
+  guardFor,
+  pauseDay,
+  rollGuardForNewDay,
+  SHIELD_MAX,
+  startPause,
+  type GuardState,
+  type RollGuardInput,
+} from '@/lib/shield';
 import { ru } from '@/lib/i18n/ru';
 import { en } from '@/lib/i18n/en';
 
@@ -1121,6 +1142,201 @@ check('вечер после успеха', push({ slot: 'evening', sent: 5, str
 check('вечер после провала', push({ slot: 'evening', sent: 3 })?.body, '3 из 5. Завтра с нуля. Квота та же — ещё шанс.');
 check('ночью зовём на чекин режима', push({ slot: 'night' })?.title, 'Сегодня держался?');
 check('ночной пуш ведёт на прогресс', push({ slot: 'night' })?.url, '/progress');
+check('на привале утром молчим', push({ paused: true }), null);
+check('на привале днём молчим', push({ paused: true, slot: 'midday', sent: 1 }), null);
+check('на привале вечером молчим', push({ paused: true, slot: 'evening', sent: 1 }), null);
+check('ночной чекин приходит и на привале', push({ paused: true, slot: 'night' })?.tag, 'mode');
+check('под щитом утром молчим', push({ shielded: true }), null);
+check('под щитом днём молчим', push({ shielded: true, slot: 'midday', sent: 1 }), null);
+check(
+  'вечером под щитом зовём вернуть заряд',
+  push({ shielded: true, slot: 'evening', sent: 2 })?.body,
+  'День под щитом. Закроешь 5 — заряд вернётся.',
+);
+check(
+  'закрытая квота под щитом — обычный вечер',
+  push({ shielded: true, slot: 'evening', sent: 5, streak: 4 })?.body,
+  'Закрыл 5. Стрик: 4 дней. Завтра квота растёт.',
+);
+
+/* -------------------------------------------------------------------------- */
+section('Щит и привал');
+
+const g = (over: Partial<GuardState> = {}): GuardState => ({
+  charges: 3,
+  progress: 0,
+  shieldDate: null,
+  auto: true,
+  pauseStart: null,
+  ...over,
+});
+
+check('день без защиты голый', guardFor(g(), '2026-08-21'), null);
+check('щит закрывает свой день', guardFor(g({ shieldDate: '2026-08-21' }), '2026-08-21'), 'shield');
+check('щит не закрывает соседний', guardFor(g({ shieldDate: '2026-08-20' }), '2026-08-21'), null);
+check('привал накрывает день включения', guardFor(g({ pauseStart: '2026-08-21' }), '2026-08-21'), 'pause');
+check('привал накрывает всё после', guardFor(g({ pauseStart: '2026-08-18' }), '2026-08-21'), 'pause');
+check('привал не действует задним числом', guardFor(g({ pauseStart: '2026-08-21' }), '2026-08-20'), null);
+check(
+  'привал сильнее щита',
+  guardFor(g({ pauseStart: '2026-08-20', shieldDate: '2026-08-21' }), '2026-08-21'),
+  'pause',
+);
+
+check('день включения привала первый', pauseDay('2026-08-21', '2026-08-21'), 1);
+check('третьи сутки привала', pauseDay('2026-08-19', '2026-08-21'), 3);
+check('без привала дней нет', pauseDay(null, '2026-08-21'), 0);
+
+check('щит тратит заряд', armShield(g(), '2026-08-21').charges, 2);
+check('щит помечает свой день', armShield(g(), '2026-08-21').shieldDate, '2026-08-21');
+check('дважды за день щит не взвести', armShield(armShield(g(), '2026-08-21'), '2026-08-21').charges, 2);
+check('без зарядов щит не взводится', armShield(g({ charges: 0 }), '2026-08-21').shieldDate, null);
+check('на привале щит не взводится', armShield(g({ pauseStart: '2026-08-20' }), '2026-08-21').shieldDate, null);
+check('снятый щит возвращает заряд', disarmShield(armShield(g(), '2026-08-21'), '2026-08-21').charges, 3);
+check(
+  'чужой день щит не снимает',
+  disarmShield(g({ charges: 2, shieldDate: '2026-08-20' }), '2026-08-21').charges,
+  2,
+);
+check(
+  'возврат не пробивает потолок',
+  disarmShield(g({ charges: SHIELD_MAX, shieldDate: '2026-08-21' }), '2026-08-21').charges,
+  SHIELD_MAX,
+);
+
+check('привал возвращает взведённый щит', startPause(armShield(g(), '2026-08-21'), '2026-08-21').charges, 3);
+check('привал начинается сегодня', startPause(g(), '2026-08-21').pauseStart, '2026-08-21');
+check(
+  'повторный привал не сдвигает дату',
+  startPause(g({ pauseStart: '2026-08-18' }), '2026-08-21').pauseStart,
+  '2026-08-18',
+);
+check('возврат в работу снимает привал', endPause(g({ pauseStart: '2026-08-18' })).pauseStart, null);
+
+check('до нового заряда четыре дня', daysUntilShield(g({ charges: 0 })), 4);
+check('после двух закрытых осталось два', daysUntilShield(g({ charges: 1, progress: 2 })), 2);
+check('при полном запасе копить нечего', daysUntilShield(g()), 0);
+check('щит доступен', canArmShield(g(), '2026-08-21'), true);
+check('без зарядов недоступен', canArmShield(g({ charges: 0 }), '2026-08-21'), false);
+check('уже взведённый повторно недоступен', canArmShield(g({ shieldDate: '2026-08-21' }), '2026-08-21'), false);
+
+check('днём время есть', burnLevel(600), 'safe');
+check('шесть часов — жёлтый', burnLevel(360), 'warn');
+check('два часа — красный', burnLevel(120), 'danger');
+check('время вышло', burnLevel(0), 'danger');
+
+check('в 22:00 остаётся шесть часов', minutesUntilDayEnd('2026-08-21T22:00'), 360);
+check('в 00:00 остаётся четыре часа', minutesUntilDayEnd('2026-08-22T00:00'), 240);
+check('в 03:30 остаётся полчаса', minutesUntilDayEnd('2026-08-22T03:30'), 30);
+check('в 04:00 начинается новый день', minutesUntilDayEnd('2026-08-22T04:00'), 1440);
+check('часы и минуты', formatTimeLeft(312, 'ru'), '5 ч 12 мин');
+check('ровный час без минут', formatTimeLeft(120, 'ru'), '2 ч');
+check('меньше часа — только минуты', formatTimeLeft(45, 'ru'), '45 мин');
+check('английский формат без пробела', formatTimeLeft(312, 'en'), '5h 12m');
+
+const roll = (over: Partial<RollGuardInput> = {}) =>
+  rollGuardForNewDay({
+    today: '2026-08-21',
+    lastDate: '2026-08-20',
+    quota: 5,
+    quotaStreak: 7,
+    sentByDate: {},
+    guard: g(),
+    ...over,
+  });
+
+check('за сегодня повторно не судим', roll({ lastDate: '2026-08-21' }).changed, false);
+check('первый запуск ничего не судит', roll({ lastDate: null }).quotaStreak, 7);
+check('часы уехали назад — молчим', roll({ lastDate: '2026-08-22' }).changed, false);
+
+check('закрытый день продлевает серию', roll({ sentByDate: { '2026-08-20': 5 } }).quotaStreak, 8);
+check('квота пересчитывается по серии', roll({ sentByDate: { '2026-08-20': 5 } }).currentQuota, 11);
+check('провал без автосейва рвёт серию', roll({ guard: g({ auto: false }) }).quotaStreak, 0);
+check('порванная серия помнит день', roll({ guard: g({ auto: false }) }).brokenAt, '2026-08-20');
+
+check('автосейв держит серию', roll().quotaStreak, 7);
+check('автосейв тратит заряд', roll().guard.charges, 2);
+check('спасённый день назван', roll().spent, ['2026-08-20']);
+check('спасённая серия не растёт', roll().quotaStreak, 7);
+
+check(
+  'взведённый щит не тратит второй заряд',
+  roll({ guard: g({ charges: 2, shieldDate: '2026-08-20' }) }).guard.charges,
+  2,
+);
+check(
+  'взведённый щит держит серию',
+  roll({ guard: g({ charges: 2, shieldDate: '2026-08-20' }) }).quotaStreak,
+  7,
+);
+check(
+  'после разбора метка щита снимается',
+  roll({ guard: g({ charges: 2, shieldDate: '2026-08-20' }) }).guard.shieldDate,
+  null,
+);
+check(
+  'щит на закрытом дне возвращается',
+  roll({ sentByDate: { '2026-08-20': 5 }, guard: g({ charges: 2, shieldDate: '2026-08-20' }) })
+    .guard.charges,
+  3,
+);
+check(
+  'возврат щита назван',
+  roll({ sentByDate: { '2026-08-20': 5 }, guard: g({ charges: 2, shieldDate: '2026-08-20' }) })
+    .refunded,
+  ['2026-08-20'],
+);
+
+const trip = roll({ today: '2026-08-24', lastDate: '2026-08-21' });
+check('три дня поездки закрываются тремя зарядами', trip.spent.length, 3);
+check('после поездки зарядов не осталось', trip.guard.charges, 0);
+check('серия пережила поездку', trip.quotaStreak, 7);
+
+const overrun = roll({ today: '2026-08-25', lastDate: '2026-08-21' });
+check('четвёртый день без зарядов рвёт серию', overrun.quotaStreak, 0);
+check('день обрыва назван', overrun.brokenAt, '2026-08-24');
+
+const paused = roll({
+  today: '2026-08-25',
+  lastDate: '2026-08-20',
+  guard: g({ charges: 0, auto: false, pauseStart: '2026-08-19' }),
+});
+check('привал держит серию сколько угодно', paused.quotaStreak, 7);
+check('привал не тратит заряды', paused.guard.charges, 0);
+check('привал не рвётся сам', paused.guard.pauseStart, '2026-08-19');
+
+const workedOnPause = roll({
+  sentByDate: { '2026-08-20': 6 },
+  guard: g({ pauseStart: '2026-08-18' }),
+});
+check('привал сам не снимается закрытым днём', workedOnPause.guard.pauseStart, '2026-08-18');
+check('закрытая квота на привале растит серию', workedOnPause.quotaStreak, 8);
+
+const earned = roll({
+  today: '2026-08-25',
+  lastDate: '2026-08-21',
+  quotaStreak: 0,
+  sentByDate: {
+    '2026-08-21': 5,
+    '2026-08-22': 5,
+    '2026-08-23': 5,
+    '2026-08-24': 5,
+  },
+  guard: g({ charges: 0 }),
+});
+check('четыре закрытых дня дают заряд', earned.guard.charges, 1);
+check('восстановление посчитано', earned.earned, 1);
+check('серия выросла на четыре дня', earned.quotaStreak, 4);
+
+const full = roll({
+  today: '2026-08-29',
+  lastDate: '2026-08-21',
+  sentByDate: Object.fromEntries(
+    Array.from({ length: 8 }, (_, i) => [`2026-08-${21 + i}`, 5]),
+  ),
+});
+check('запас щитов не превышает трёх', full.guard.charges, SHIELD_MAX);
+check('при полном запасе прогресс не копится', full.guard.progress, 0);
 
 /* -------------------------------------------------------------------------- */
 section('Полнота словарей');

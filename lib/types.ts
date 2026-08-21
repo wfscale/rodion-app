@@ -137,6 +137,16 @@ export type Profile = {
   chain_days: number;
   chain_last_date: string | null;
 
+  /**
+   * Щит и привал (migration-v7). Страховка серии закрытых дней:
+   * заряды тратятся по одному на день, привал останавливает счёт целиком.
+   */
+  shield_charges: number;
+  shield_progress: number;
+  shield_date: string | null;
+  shield_auto: boolean;
+  pause_start: string | null;
+
   // Первые события воронки
   first_reply_at: string | null;
   first_call_at: string | null;

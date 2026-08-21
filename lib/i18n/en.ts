@@ -157,6 +157,56 @@ export const en: Dict = {
     milestone: 'Milestone: {n} messages',
   },
 
+  // Shield and stopover — the streak safety net. Never explained on screen:
+  // a trick that gets described out loud stops working.
+  guard: {
+    title: 'Day shield',
+
+    burn: 'Burns in {t}',
+    burnLeft: '{n} left',
+    burnSafe: 'Time is there',
+    burnDone: 'Day closed. Streak grows.',
+    quotaPaused: 'Quota on hold',
+
+    charges: 'Charges',
+    regen: 'New charge in {n} {unit} at quota',
+    regenShort: 'in {n} {unit}',
+    regenFull: 'Reserve is full',
+    empty: 'No charges',
+
+    arm: 'Save the day',
+    disarm: 'Drop the shield',
+    pauseOn: 'Take a stopover',
+    pauseConfirm: 'Yes, pause',
+    pauseOff: 'Back to work',
+
+    armed: 'Day is shielded',
+    armedHint:
+      'The streak holds even with zero messages today. Close the quota and the charge comes back.',
+    paused: 'Stopover · day {n}',
+    pausedHint:
+      'The streak is frozen at {n} and does not grow. Touches and reminders keep coming — the base stays alive.',
+    idleHint: 'Three charges for a bad day. Each one covers exactly one day.',
+    emptyHint: 'No charges left. From here the streak is held by work only.',
+    keepsWorking: 'Touches and reminders always work — the stopover never touches them.',
+
+    auto: 'Auto-save',
+    autoHint: 'If the day ends without the quota, a charge is spent on its own.',
+    autoOffHint: 'A charge is only spent by hand, with the button.',
+
+    toastArmed: 'Day is shielded',
+    toastDisarmed: 'Charge is back in reserve',
+    toastRefund: 'Shield was not needed — charge returned',
+    toastEarned: 'Shield restored',
+    toastSpentOne: 'A shield covered yesterday. Streak holds: {n}',
+    toastSpentMany: 'Shields covered the gap. Streak holds: {n}',
+    toastPauseOn: 'Stopover. Streak frozen at {n}',
+    toastPauseOff: 'The streak was waiting: {n}',
+    toastBroken: 'The streak is gone. Starting over.',
+
+    notReady: 'The shield turns on after migration v7 in Supabase.',
+  },
+
   habits: {
     water: 'Water 500 ml + pinch of salt',
     pushups: '50 push-ups',

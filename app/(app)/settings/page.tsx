@@ -6,8 +6,9 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useApp } from '@/components/AppProvider';
 import { CardTitle, GlassCard } from '@/components/GlassCard';
 import { useLanguage } from '@/components/LanguageProvider';
-import { Button, Field, FullPageLoader, Label, Segmented, Spinner } from '@/components/ui';
+import { Button, Field, FullPageLoader, Label, Segmented, Spinner, Switch } from '@/components/ui';
 import { formatDateTime } from '@/lib/date';
+import { SHIELD_MAX } from '@/lib/shield';
 import { setSheetsConnected, syncSheetsNow } from '@/lib/sheets-client';
 import { pushStatus, subscribeToPush, unsubscribeFromPush, type PushStatus } from '@/lib/push-client';
 import { createClient } from '@/lib/supabase/client';
@@ -16,8 +17,8 @@ import type { GoogleIntegration, Language } from '@/lib/types';
 const APP_VERSION = '1.0.0';
 
 function SettingsContent() {
-  const { t, lang, setLang } = useLanguage();
-  const { profile, user, loading, updateProfile, signOut, reload } = useApp();
+  const { t, tf, days, lang, setLang } = useLanguage();
+  const { profile, user, loading, guard, setShieldAuto, updateProfile, signOut, reload } = useApp();
   const params = useSearchParams();
 
   const [username, setUsername] = useState('');
@@ -291,38 +292,60 @@ function SettingsContent() {
         </div>
       </GlassCard>
 
-      {/* ---------------------------- Отдача ----------------------------- */}
+      {/* ------------------------- Щит и привал -------------------------- */}
+      {/* Здесь живёт только настройка автосейва: сами рычаги — на странице
+          рассылок, рядом с квотой, где решение и принимается. */}
       <GlassCard delay={2}>
+        <CardTitle>{t.guard.title}</CardTitle>
+
+        {guard.ready ? (
+          <div className="space-y-4">
+            <div>
+              <Label>{t.guard.charges}</Label>
+              <p className="field flex items-center justify-between gap-3">
+                <span className="text-xl font-extrabold tabular-nums">
+                  {guard.charges} / {SHIELD_MAX}
+                </span>
+                <span className="truncate text-sm text-muted">
+                  {guard.regenIn === 0
+                    ? t.guard.regenFull
+                    : tf(t.guard.regenShort, { n: guard.regenIn, unit: days(guard.regenIn) })}
+                </span>
+              </p>
+            </div>
+
+            <Switch
+              label={t.guard.auto}
+              hint={guard.auto ? t.guard.autoHint : t.guard.autoOffHint}
+              checked={guard.auto}
+              onChange={(value) => {
+                void setShieldAuto(value);
+                flashSaved();
+              }}
+            />
+          </div>
+        ) : (
+          <p className="text-sm leading-relaxed text-muted">{t.guard.notReady}</p>
+        )}
+      </GlassCard>
+
+      {/* ---------------------------- Отдача ----------------------------- */}
+      <GlassCard delay={3}>
         <CardTitle>{t.settings.feedback}</CardTitle>
 
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-base font-bold">{t.settings.sounds}</p>
-            <p className="mt-0.5 text-sm text-muted">{t.settings.soundsHint}</p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={Boolean(profile.sound_enabled)}
-            onClick={() => {
-              void updateProfile({ sound_enabled: !profile.sound_enabled });
-              flashSaved();
-            }}
-            className={`relative h-8 w-14 shrink-0 rounded-full transition-colors ${
-              profile.sound_enabled ? 'bg-white' : 'bg-white/15'
-            }`}
-          >
-            <span
-              className={`absolute top-1 h-6 w-6 rounded-full transition-all ${
-                profile.sound_enabled ? 'left-7 bg-ink' : 'left-1 bg-white/60'
-              }`}
-            />
-          </button>
-        </div>
+        <Switch
+          label={t.settings.sounds}
+          hint={t.settings.soundsHint}
+          checked={Boolean(profile.sound_enabled)}
+          onChange={(value) => {
+            void updateProfile({ sound_enabled: value });
+            flashSaved();
+          }}
+        />
       </GlassCard>
 
       {/* -------------------------- Уведомления --------------------------- */}
-      <GlassCard delay={3}>
+      <GlassCard delay={4}>
         <CardTitle>{t.settings.push}</CardTitle>
 
         <p className="mb-3 text-sm text-muted">{t.settings.pushHint}</p>
@@ -346,7 +369,7 @@ function SettingsContent() {
       </GlassCard>
 
       {/* -------------------------- Интеграции --------------------------- */}
-      <GlassCard delay={4}>
+      <GlassCard delay={5}>
         <CardTitle>{t.settings.integrations}</CardTitle>
 
         <div className="space-y-4">
@@ -420,7 +443,7 @@ function SettingsContent() {
       </GlassCard>
 
       {/* ----------------------------- Язык ------------------------------ */}
-      <GlassCard delay={5}>
+      <GlassCard delay={6}>
         <CardTitle>{t.settings.language}</CardTitle>
 
         <Segmented<Language>
@@ -438,7 +461,7 @@ function SettingsContent() {
       </GlassCard>
 
       {/* ----------------------------- Данные ---------------------------- */}
-      <GlassCard delay={6}>
+      <GlassCard delay={7}>
         <CardTitle>{t.settings.data}</CardTitle>
 
         <div className="space-y-3">
@@ -480,7 +503,7 @@ function SettingsContent() {
       </GlassCard>
 
       {/* -------------------------- О приложении ------------------------- */}
-      <GlassCard delay={5}>
+      <GlassCard delay={8}>
         <CardTitle right={<span className="text-sm text-white/35">{APP_VERSION}</span>}>
           {t.settings.about}
         </CardTitle>

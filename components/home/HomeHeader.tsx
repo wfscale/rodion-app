@@ -3,10 +3,13 @@
 import { useLanguage } from '@/components/LanguageProvider';
 import { StreakPill } from '@/components/StreakBlock';
 import { XpBar } from '@/components/XpBar';
+import type { DayGuard } from '@/lib/shield';
 
 type HomeHeaderProps = {
   /** Дни серии — огонь. */
   streak: number;
+  /** Чем защищён сегодняшний день: щитом, привалом или ничем. */
+  guard?: DayGuard;
   /** Дни подряд, в которые была хотя бы одна рассылка. Отдельный счётчик. */
   chainDays: number;
   level: number;
@@ -31,6 +34,7 @@ type HomeHeaderProps = {
  */
 export function HomeHeader({
   streak,
+  guard = null,
   chainDays,
   level,
   levelName,
@@ -46,7 +50,7 @@ export function HomeHeader({
   return (
     <div className="glass px-3.5 py-3">
       <div className="flex items-center gap-2">
-        <StreakPill streak={streak} />
+        <StreakPill streak={streak} guard={guard} />
 
         {/* Цепочка появляется только с 3 дней — раньше она ничего не значит. */}
         {chainDays >= 3 && (

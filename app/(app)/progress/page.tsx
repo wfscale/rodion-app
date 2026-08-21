@@ -21,6 +21,7 @@ import { getLogicalDate, shiftDate } from '@/lib/date';
 import { dailySeries, funnelTotals, overdueTouchCount, spanDays, xpSeries } from '@/lib/insights';
 import { needsEveningCheckin } from '@/lib/mode';
 import { missingWeeks, statsForWeek } from '@/lib/reports';
+import { SHIELD_MAX } from '@/lib/shield';
 import { createClient } from '@/lib/supabase/client';
 import type { WeeklyReport, XpTransaction } from '@/lib/types';
 import { FEATURE_LEVEL, nextLevelTeaser } from '@/lib/xp';
@@ -38,7 +39,7 @@ type Range = 7 | 14 | 30 | 90 | 'all';
 const ALL_TIME_CAP = 365;
 
 export default function ProgressPage() {
-  const { t, tf } = useLanguage();
+  const { t, tf, days } = useLanguage();
   const app = useApp();
 
   const [transactions, setTransactions] = useState<XpTransaction[]>([]);
@@ -199,6 +200,24 @@ export default function ProgressPage() {
             </div>
           ))}
         </div>
+
+        {/* Запас щитов — здесь только число: рычаги живут на странице
+            рассылок, а прогресс существует, чтобы смотреть, а не жать. */}
+        {app.guard.ready && (
+          <p className="mt-3 flex items-center justify-between gap-3 border-t border-divider pt-3 text-sm">
+            <span className="text-white/40">{t.guard.charges}</span>
+            <span className="truncate text-right">
+              <b className="font-extrabold tabular-nums">
+                {app.guard.charges} / {SHIELD_MAX}
+              </b>
+              <span className="ml-2 text-white/35">
+                {app.guard.regenIn === 0
+                  ? t.guard.regenFull
+                  : tf(t.guard.regenShort, { n: app.guard.regenIn, unit: days(app.guard.regenIn) })}
+              </span>
+            </span>
+          </p>
+        )}
       </GlassCard>
 
       {/* График: метрика и окно переключаются, высота шкалы — никогда. */}
