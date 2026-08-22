@@ -6,7 +6,7 @@ import { useLanguage } from '@/components/LanguageProvider';
 import type { Dict } from '@/lib/i18n';
 
 /**
- * Шесть базовых привычек. id пишутся в jsonb-поле checklist — менять их
+ * Семь базовых привычек. id пишутся в jsonb-поле checklist — менять их
  * нельзя, от них зависят все прошлые записи дня.
  */
 export const HABITS: { id: string; labelKey: keyof Dict['habits'] }[] = [
@@ -16,6 +16,7 @@ export const HABITS: { id: string; labelKey: keyof Dict['habits'] }[] = [
   { id: 'walk', labelKey: 'walk' },
   { id: 'd3', labelKey: 'd3' },
   { id: 'no_reels', labelKey: 'noReels' },
+  { id: 'english', labelKey: 'english' },
 ];
 
 type HabitsBlockProps = {

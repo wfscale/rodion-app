@@ -5,13 +5,13 @@ import { Check, Circle, Plus, X } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { GlassCard, CardTitle } from '@/components/GlassCard';
 import { useLanguage } from '@/components/LanguageProvider';
-import type { DailyTask } from '@/lib/types';
+import type { HomeTask } from '@/components/AppProvider';
 
 type DailyTasksProps = {
-  tasks: DailyTask[];
+  tasks: HomeTask[];
   onAdd: (text: string) => void;
-  onToggle: (id: string) => void;
-  onDelete: (id: string) => void;
+  onToggle: (task: HomeTask) => void;
+  onDelete: (task: HomeTask) => void;
 };
 
 /**
@@ -20,6 +20,12 @@ type DailyTasksProps = {
  * XP тут не начисляется намеренно: если бы список задач давал опыт, его
  * можно было бы «выполнить» вместо рассылок. Поэтому — никаких «+XP»,
  * только вычёркивание.
+ *
+ * Дневные задачи проектов попадают в этот же список: работа по проекту и
+ * есть работа дня, и держать её в отдельном месте значит про неё забыть.
+ * Отличается она только подписью с именем эксперта и тем, что удалить её
+ * отсюда нельзя — пункт плана запуска не должен смахиваться одним движением
+ * с рабочего экрана.
  */
 export function DailyTasks({ tasks, onAdd, onToggle, onDelete }: DailyTasksProps) {
   const { t } = useLanguage();
@@ -70,8 +76,8 @@ export function DailyTasks({ tasks, onAdd, onToggle, onDelete }: DailyTasksProps
               >
                 <TaskRow
                   task={task}
-                  onToggle={() => onToggle(task.id)}
-                  onDelete={() => onDelete(task.id)}
+                  onToggle={() => onToggle(task)}
+                  onDelete={() => onDelete(task)}
                   deleteLabel={t.common.delete}
                 />
               </motion.li>
@@ -130,12 +136,13 @@ function TaskRow({
   onDelete,
   deleteLabel,
 }: {
-  task: DailyTask;
+  task: HomeTask;
   onToggle: () => void;
   onDelete: () => void;
   deleteLabel: string;
 }) {
   const done = task.completed;
+  const fromProject = task.source === 'project';
   const [strikeSettled, setStrikeSettled] = useState(done);
 
   // Сняли отметку — линию нужно снова рисовать, а не показывать готовой.
@@ -183,6 +190,19 @@ function TaskRow({
             {task.text}
           </motion.span>
 
+          {/* Имя эксперта — единственное отличие задачи проекта. Значка или
+              цвета не хватило бы: важно не «откуда она», а «по кому». */}
+          {fromProject && task.project && (
+            <motion.span
+              initial={false}
+              animate={{ opacity: done ? 0.3 : 1 }}
+              transition={{ duration: 0.3 }}
+              className="mt-0.5 block truncate text-xs text-white/35"
+            >
+              {task.project}
+            </motion.span>
+          )}
+
           {!strikeSettled && (
             <motion.span
               aria-hidden="true"
@@ -199,14 +219,17 @@ function TaskRow({
         </span>
       </motion.button>
 
-      <button
-        type="button"
-        onClick={onDelete}
-        aria-label={deleteLabel}
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white/25 transition-colors hover:bg-white/10 hover:text-danger"
-      >
-        <X size={16} />
-      </button>
+      {/* Задачу проекта удаляют там же, где заводят — на его странице. */}
+      {!fromProject && (
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label={deleteLabel}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white/25 transition-colors hover:bg-white/10 hover:text-danger"
+        >
+          <X size={16} />
+        </button>
+      )}
     </div>
   );
 }

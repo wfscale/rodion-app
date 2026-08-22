@@ -9,7 +9,7 @@ import { Badge, Button, Field, Label, TextArea } from '@/components/ui';
 import { formatDateTime, getLogicalDate } from '@/lib/date';
 import {
   CONTACT_STATUSES,
-  NEGATIVE_STATUSES,
+  HARSH_STATUSES,
   normalizeStatus,
   type ContactStatus,
   type OutreachContact,
@@ -81,16 +81,20 @@ export function instagramHandleFrom(url: string | null | undefined): string {
 /**
  * Цветовой тон бейджа по позиции в воронке.
  *
- * Красный означает ровно одно: дверь закрылась. «Ответил — отказ» и
+ * Красный означает ровно одно: дверью хлопнули в лицо. «Ответил — отказ» и
  * «Заблокировал» — единственные такие исходы, и их видно с другого конца
  * списка, чтобы не тратить на них ни одного лишнего взгляда.
+ *
+ * «Удалил чат» работа тоже заканчивает, но это не отказ, а тишина — поэтому
+ * у него свой голубой тон, а не общий с ними красный.
  */
 export function statusTone(
   status: ContactStatus,
-): 'neutral' | 'success' | 'danger' | 'warn' {
+): 'neutral' | 'success' | 'danger' | 'warn' | 'info' {
   if (status === 'closed') return 'success';
   if (status === 'call' || status === 'replied') return 'warn';
-  if (NEGATIVE_STATUSES.includes(status)) return 'danger';
+  if (HARSH_STATUSES.includes(status)) return 'danger';
+  if (status === 'deleted_chat') return 'info';
   return 'neutral';
 }
 

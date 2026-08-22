@@ -157,7 +157,8 @@ export function primeScore(contact: OutreachContact, today: string): number {
   else if (contact.status === 'replied') score += 45;
   else if (contact.status === 'read') score += 20;
   else if (contact.status === 'sent') score += 10;
-  else return 0; // closed, replied_no, blocked, not_sent — работа окончена
+  // closed, replied_no, deleted_chat, blocked, not_sent — работа окончена
+  else return 0;
 
   if (state.urgency === 'overdue') score += 25 + Math.min(15, Math.abs(state.daysUntil));
   else if (state.urgency === 'due') score += 20;

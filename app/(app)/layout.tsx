@@ -11,9 +11,19 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     <AppProvider>
       <Sidebar />
 
-      {/* Сайдбар на десктопе фиксирован — контент отодвигается на его ширину. */}
+      {/*
+        Сайдбар на десктопе фиксирован — контент отодвигается на его ширину.
+
+        Ширина колонки задана двумя разными правилами намеренно. На телефоне
+        это приложение: одна колонка max-w-lg, как в любом нативном экране.
+        На большом мониторе это уже сайт, и жёсткий max-w-5xl оставлял по
+        краям пустые полосы шире самого контента — экран не заполнен, а всё
+        уезжает вниз бесконечной лентой. Поэтому от md ограничение снимается,
+        а потолок появляется только на очень широких экранах: строка длиннее
+        ~1700px читается хуже, сколько бы места ни было.
+      */}
       <main className="md:pl-[240px]">
-        <div className="pb-content mx-auto w-full max-w-lg px-4 pt-[calc(16px+env(safe-area-inset-top))] md:max-w-5xl md:px-6 md:pb-16 md:pt-10">
+        <div className="pb-content mx-auto w-full max-w-lg px-4 pt-[calc(16px+env(safe-area-inset-top))] md:max-w-none md:px-8 md:pb-16 md:pt-10 xl:px-10 2xl:max-w-[1720px]">
           {children}
         </div>
       </main>

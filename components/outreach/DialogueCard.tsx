@@ -36,7 +36,7 @@ export function DialogueCard({ contacts }: { contacts: OutreachContact[] }) {
       </CardTitle>
 
       {digest.chats === 0 ? (
-        <p className="text-sm leading-relaxed text-muted">{t.chatDigest.empty}</p>
+        <p className="py-3 text-sm leading-relaxed text-muted">{t.chatDigest.empty}</p>
       ) : (
         <>
           <p className="text-sm leading-snug">

@@ -69,6 +69,7 @@ import {
   type DailyLog,
   type DailyTask,
   type OutreachContact,
+  type ProjectTask,
   type Profile,
   type Reminder,
 } from '@/lib/types';
@@ -98,6 +99,23 @@ type QuotaState = {
   closed: boolean;
 };
 
+/**
+ * Задача в списке дня на главной.
+ *
+ * Своя задача и дневная задача проекта попадают сюда одинаково: работа по
+ * проекту и есть работа дня, и держать её в отдельном списке значит
+ * гарантированно про неё забыть. Недельные задачи проекта сюда не
+ * поднимаются — иначе список дня перестаёт быть списком дня.
+ */
+export type HomeTask = {
+  id: string;
+  text: string;
+  completed: boolean;
+  source: 'day' | 'project';
+  /** Имя эксперта. Только у задач проекта — по нему видно, откуда она. */
+  project: string | null;
+};
+
 export type ReminderDraft = {
   title: string;
   note: string;
@@ -117,6 +135,8 @@ type AppContextValue = {
   contacts: OutreachContact[];
   activity: ActivityEntry[];
   tasks: DailyTask[];
+  /** Список дня целиком: свои задачи плюс дневные задачи проектов. */
+  homeTasks: HomeTask[];
   logs: DailyLog[];
   todayLog: DailyLog | null;
 
@@ -153,6 +173,10 @@ type AppContextValue = {
   addTask: (text: string) => Promise<void>;
   toggleTask: (id: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
+  /** Отметить любую задачу списка дня — свою или проектную. */
+  toggleHomeTask: (task: HomeTask) => Promise<void>;
+  /** Перечитать дневные задачи проектов: их правят на странице проекта. */
+  reloadProjectTasks: () => Promise<void>;
 
   addReminder: (draft: ReminderDraft) => Promise<Reminder | null>;
   updateReminder: (id: string, patch: Partial<Reminder>) => Promise<void>;
@@ -209,6 +233,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [contacts, setContacts] = useState<OutreachContact[]>([]);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [tasks, setTasks] = useState<DailyTask[]>([]);
+  /** Дневные задачи проектов за сегодня, вместе с именем эксперта. */
+  const [projectTasks, setProjectTasks] = useState<(ProjectTask & { project: string | null })[]>([]);
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [remindersReady, setRemindersReady] = useState(true);
@@ -248,6 +274,56 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /* ------------------------------------------------------------------ */
   /*  Загрузка                                                           */
   /* ------------------------------------------------------------------ */
+
+  /**
+   * Дневные задачи проектов за сегодня.
+   *
+   * Вынесено отдельно от общей загрузки: их правят на странице проекта, и
+   * при возврате на главную список обязан быть свежим. Перечитывать ради
+   * этого весь профиль с контактами — лишние полсекунды на каждый переход.
+   */
+  const reloadProjectTasks = useCallback(async () => {
+    const {
+      data: { user: currentUser },
+    } = await supabase.auth.getUser();
+    if (!currentUser) return;
+
+    // Имя эксперта берётся вторым запросом, а не вложенным select: типы
+    // схемы связей между таблицами не описывают, и join пришлось бы
+    // протаскивать через приведение к unknown. Оба запроса крошечные.
+    const [tasksRes, projectsRes] = await Promise.all([
+      supabase
+        .from('project_tasks')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .eq('scope', 'day')
+        .eq('date', getLogicalDate())
+        .order('created_at', { ascending: true }),
+      supabase.from('projects').select('id, expert_name').eq('user_id', currentUser.id),
+    ]);
+
+    // Таблицы может не быть, пока не прогнана migration-v8. Это не ошибка
+    // приложения, а невыполненный шаг установки: список дня просто остаётся
+    // без задач проекта, всё остальное работает.
+    if (tasksRes.error) {
+      setProjectTasks([]);
+      return;
+    }
+
+    const names = new Map(
+      ((projectsRes.data as { id: string; expert_name: string }[]) ?? []).map((row) => [
+        row.id,
+        row.expert_name,
+      ]),
+    );
+
+    setProjectTasks(
+      ((tasksRes.data as ProjectTask[]) ?? []).map((task) => ({
+        ...task,
+        project: names.get(task.project_id) ?? null,
+      })),
+    );
+  }, [supabase]);
 
   const load = useCallback(async () => {
     setError(null);
@@ -367,8 +443,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setLang(loadedProfile.language);
     }
 
+    void reloadProjectTasks();
+
     setLoading(false);
-  }, [supabase, setLang]);
+  }, [supabase, setLang, reloadProjectTasks]);
 
   useEffect(() => {
     void load();
@@ -521,6 +599,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
       closed: sentToday >= q,
     };
   }, [profile?.current_quota, profile?.quota_streak, profile?.daily_record, sentToday]);
+
+  /**
+   * Список дня целиком.
+   *
+   * Свои задачи идут первыми, задачи проектов следом: сначала то, что
+   * человек поставил себе сам, потом то, что тянется из работы. Обратный
+   * порядок сделал бы личный список приложением к проектам.
+   */
+  const homeTasks = useMemo<HomeTask[]>(
+    () => [
+      ...tasks.map((task) => ({
+        id: task.id,
+        text: task.text,
+        completed: task.completed,
+        source: 'day' as const,
+        project: null,
+      })),
+      ...projectTasks.map((task) => ({
+        id: task.id,
+        text: task.text,
+        completed: task.done,
+        source: 'project' as const,
+        project: task.project,
+      })),
+    ],
+    [tasks, projectTasks],
+  );
 
   /** Сколько рассылок пришлось на каждую дату — вход для разбора дней. */
   const sentByDate = useMemo(() => {
@@ -1122,6 +1227,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [supabase],
   );
 
+  /**
+   * Отметить задачу списка дня.
+   *
+   * Удаления задачи проекта отсюда нет намеренно: список дня — рабочий
+   * экран, и смахнуть с него пункт плана запуска не должно быть возможно
+   * одним движением. Удаляются задачи проекта там же, где заводятся.
+   */
+  const toggleHomeTask = useCallback(
+    async (task: HomeTask) => {
+      if (task.source === 'day') {
+        await toggleTask(task.id);
+        return;
+      }
+
+      const done = !task.completed;
+      setProjectTasks((previous) =>
+        previous.map((x) => (x.id === task.id ? { ...x, done } : x)),
+      );
+
+      const { error: updateError } = await supabase
+        .from('project_tasks')
+        .update({ done } as never)
+        .eq('id', task.id);
+
+      if (updateError) setError(humanError(updateError.message));
+    },
+    [supabase, toggleTask],
+  );
+
   /* ------------------------------------------------------------------ */
   /*  Напоминания                                                        */
   /* ------------------------------------------------------------------ */
@@ -1334,6 +1468,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       contacts,
       activity,
       tasks,
+      homeTasks,
       logs,
       todayLog,
       reminders,
@@ -1357,6 +1492,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addTask,
       toggleTask,
       deleteTask,
+      toggleHomeTask,
+      reloadProjectTasks,
       addReminder,
       updateReminder,
       toggleReminder,
@@ -1374,12 +1511,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       signOut,
     }),
     [
-      user, profile, today, now, loading, error, contacts, activity, tasks, logs, todayLog,
+      user, profile, today, now, loading, error, contacts, activity, tasks, homeTasks, logs, todayLog,
       reminders, remindersReady, remindersDue, conversationsReady,
       quota, guard, levelInfo, cycleDayNumber, sentTotal, can,
       addContact, updateContact, setStatus, deleteContact, touchContact, muteContact,
       saveConversation,
-      addTask, toggleTask, deleteTask, addReminder, updateReminder, toggleReminder, deleteReminder,
+      addTask, toggleTask, deleteTask, toggleHomeTask, reloadProjectTasks,
+      addReminder, updateReminder, toggleReminder, deleteReminder,
       toggleHabit, saveDay, submitModeCheckin,
       armShield, disarmShield, setPause, setShieldAuto,
       updateProfile, awardXp, load, signOut,

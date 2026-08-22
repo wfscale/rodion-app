@@ -30,30 +30,45 @@ function Chip({
   active: boolean;
   label: string;
   count?: number;
-  tone?: 'default' | 'danger';
+  tone?: 'default' | 'danger' | 'info';
   onClick: () => void;
 }) {
+  const activeTone =
+    tone === 'danger'
+      ? 'border-[#FF6B6B] bg-[rgba(255,107,107,0.16)] text-danger'
+      : tone === 'info'
+        ? 'border-[#6BC5FF] bg-[rgba(107,197,255,0.16)] text-[#6BC5FF]'
+        : 'border-white bg-white text-ink';
+
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
       className={`min-h-[38px] shrink-0 whitespace-nowrap rounded-full border px-3 text-sm font-semibold transition-colors ${
-        active
-          ? tone === 'danger'
-            ? 'border-[#FF6B6B] bg-[rgba(255,107,107,0.16)] text-danger'
-            : 'border-white bg-white text-ink'
-          : 'border-glass-border bg-white/[0.05] text-white/55 hover:bg-white/10'
+        active ? activeTone : 'border-glass-border bg-white/[0.05] text-white/55 hover:bg-white/10'
       }`}
     >
       {label}
       {typeof count === 'number' && (
-        <span className={active && tone !== 'danger' ? 'ml-1.5 text-black/45' : 'ml-1.5 text-white/30'}>
+        <span className={active && tone === 'default' ? 'ml-1.5 text-black/45' : 'ml-1.5 text-white/30'}>
           {count}
         </span>
       )}
     </button>
   );
+}
+
+/**
+ * Цвет включённого фильтра по статусу.
+ *
+ * Красят только исходы, у которых есть свой цвет в списке: включённый фильтр
+ * должен выглядеть тем же, что и строки, которые он оставил на экране.
+ */
+function chipTone(tone: ReturnType<typeof statusTone>): 'default' | 'danger' | 'info' {
+  if (tone === 'danger') return 'danger';
+  if (tone === 'info') return 'info';
+  return 'default';
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -136,7 +151,7 @@ export function OutreachFilters({ filters, onChange, niches }: Props) {
                 key={status}
                 active={filters.statuses.includes(status)}
                 label={t.statuses[status]}
-                tone={statusTone(status) === 'danger' ? 'danger' : 'default'}
+                tone={chipTone(statusTone(status))}
                 onClick={() => toggleStatus(status)}
               />
             ))}

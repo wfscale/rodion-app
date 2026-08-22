@@ -6,7 +6,16 @@ import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useApp } from '@/components/AppProvider';
 import { CardTitle, GlassCard } from '@/components/GlassCard';
 import { useLanguage } from '@/components/LanguageProvider';
-import { Button, Field, FullPageLoader, Label, Segmented, Spinner, Switch } from '@/components/ui';
+import {
+  Button,
+  DeskGrid,
+  Field,
+  FullPageLoader,
+  Label,
+  Segmented,
+  Spinner,
+  Switch,
+} from '@/components/ui';
 import { formatDateTime } from '@/lib/date';
 import { SHIELD_MAX } from '@/lib/shield';
 import { setSheetsConnected, syncSheetsNow } from '@/lib/sheets-client';
@@ -214,7 +223,7 @@ function SettingsContent() {
   if (loading || !profile) return <FullPageLoader />;
 
   return (
-    <div className="space-y-4">
+    <div>
       <div className="mb-4 flex items-center justify-between gap-3">
         <h1 className="text-2xl font-extrabold tracking-tight">{t.settings.title}</h1>
         {savedFlash && (
@@ -225,290 +234,294 @@ function SettingsContent() {
         )}
       </div>
 
-      {/* ---------------------------- Профиль ---------------------------- */}
-      <GlassCard>
-        <CardTitle>{t.settings.profile}</CardTitle>
+      {/* На мониторе настройки — набор равнозначных карточек, и колонка
+          в одну ширину телефона оставляла бы две трети экрана пустыми. */}
+      <DeskGrid>
+        {/* ---------------------------- Профиль ---------------------------- */}
+        <GlassCard>
+          <CardTitle>{t.settings.profile}</CardTitle>
 
-        <div className="space-y-4">
-          <Field
-            label={t.settings.username}
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            onBlur={() => {
-              if (username.trim() !== (profile.username ?? '')) {
-                void updateProfile({ username: username.trim() || null });
-                flashSaved();
-              }
-            }}
-            placeholder={t.settings.usernamePh}
-          />
-
-          <div>
-            <Label>{t.settings.email}</Label>
-            <p className="field flex items-center text-muted">{user?.email ?? '—'}</p>
-          </div>
-
-          <Button variant="ghost" full onClick={() => void signOut()}>
-            <LogOut size={16} />
-            {t.settings.signOut}
-          </Button>
-        </div>
-      </GlassCard>
-
-      {/* ---------------------------- Ставки ----------------------------- */}
-      <GlassCard delay={1}>
-        <CardTitle>{t.settings.goals}</CardTitle>
-
-        <div className="space-y-5">
-          {/* Дедлайн задаёт счётчик в трезвом режиме — поэтому он редактируемый. */}
-          <label className="block">
-            <Label hint={t.settings.deadlineHint}>{t.settings.deadline}</Label>
-            <input
-              type="date"
-              value={deadline}
-              onChange={(e) => setDeadline(e.target.value)}
+          <div className="space-y-4">
+            <Field
+              label={t.settings.username}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               onBlur={() => {
-                if (deadline && deadline !== profile.deadline_date) {
-                  void updateProfile({ deadline_date: deadline });
+                if (username.trim() !== (profile.username ?? '')) {
+                  void updateProfile({ username: username.trim() || null });
                   flashSaved();
                 }
               }}
-              className="field"
+              placeholder={t.settings.usernamePh}
             />
-          </label>
 
-          {/* Квота не задаётся вручную: она растёт от выполнения, иначе теряет смысл. */}
-          <div>
-            <Label hint={t.settings.quotaInfoHint}>{t.settings.quotaInfo}</Label>
-            <p className="field flex items-center justify-between">
-              <span className="text-xl font-extrabold tabular-nums">
-                {profile.current_quota ?? 5}
-              </span>
-              <span className="text-sm text-muted">
-                {t.home.record}: {profile.daily_record ?? 0}
-              </span>
-            </p>
-          </div>
-        </div>
-      </GlassCard>
-
-      {/* ------------------------- Щит и привал -------------------------- */}
-      {/* Здесь живёт только настройка автосейва: сами рычаги — на странице
-          рассылок, рядом с квотой, где решение и принимается. */}
-      <GlassCard delay={2}>
-        <CardTitle>{t.guard.title}</CardTitle>
-
-        {guard.ready ? (
-          <div className="space-y-4">
             <div>
-              <Label>{t.guard.charges}</Label>
-              <p className="field flex items-center justify-between gap-3">
-                <span className="text-xl font-extrabold tabular-nums">
-                  {guard.charges} / {SHIELD_MAX}
-                </span>
-                <span className="truncate text-sm text-muted">
-                  {guard.regenIn === 0
-                    ? t.guard.regenFull
-                    : tf(t.guard.regenShort, { n: guard.regenIn, unit: days(guard.regenIn) })}
-                </span>
-              </p>
+              <Label>{t.settings.email}</Label>
+              <p className="field flex items-center text-muted">{user?.email ?? '—'}</p>
             </div>
 
-            <Switch
-              label={t.guard.auto}
-              hint={guard.auto ? t.guard.autoHint : t.guard.autoOffHint}
-              checked={guard.auto}
-              onChange={(value) => {
-                void setShieldAuto(value);
-                flashSaved();
-              }}
-            />
+            <Button variant="ghost" full onClick={() => void signOut()}>
+              <LogOut size={16} />
+              {t.settings.signOut}
+            </Button>
           </div>
-        ) : (
-          <p className="text-sm leading-relaxed text-muted">{t.guard.notReady}</p>
-        )}
-      </GlassCard>
+        </GlassCard>
 
-      {/* ---------------------------- Отдача ----------------------------- */}
-      <GlassCard delay={3}>
-        <CardTitle>{t.settings.feedback}</CardTitle>
+        {/* ---------------------------- Ставки ----------------------------- */}
+        <GlassCard delay={1}>
+          <CardTitle>{t.settings.goals}</CardTitle>
 
-        <Switch
-          label={t.settings.sounds}
-          hint={t.settings.soundsHint}
-          checked={Boolean(profile.sound_enabled)}
-          onChange={(value) => {
-            void updateProfile({ sound_enabled: value });
-            flashSaved();
-          }}
-        />
-      </GlassCard>
+          <div className="space-y-5">
+            {/* Дедлайн задаёт счётчик в трезвом режиме — поэтому он редактируемый. */}
+            <label className="block">
+              <Label hint={t.settings.deadlineHint}>{t.settings.deadline}</Label>
+              <input
+                type="date"
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+                onBlur={() => {
+                  if (deadline && deadline !== profile.deadline_date) {
+                    void updateProfile({ deadline_date: deadline });
+                    flashSaved();
+                  }
+                }}
+                className="field"
+              />
+            </label>
 
-      {/* -------------------------- Уведомления --------------------------- */}
-      <GlassCard delay={4}>
-        <CardTitle>{t.settings.push}</CardTitle>
-
-        <p className="mb-3 text-sm text-muted">{t.settings.pushHint}</p>
-
-        <Button
-          variant={profile.push_enabled ? 'ghost' : 'primary'}
-          full
-          onClick={togglePush}
-          disabled={pushBusy || push === 'unsupported'}
-        >
-          {pushBusy ? <Spinner /> : null}
-          {profile.push_enabled ? t.settings.pushDisable : t.settings.pushEnable}
-        </Button>
-
-        {(pushNote || push === 'needs-install' || push === 'denied') && (
-          <p className="mt-3 rounded-xl border border-glass-border bg-white/[0.04] px-3 py-2.5 text-sm leading-relaxed text-white/70">
-            {pushNote ??
-              (push === 'needs-install' ? t.settings.pushUnsupported : t.settings.pushDenied)}
-          </p>
-        )}
-      </GlassCard>
-
-      {/* -------------------------- Интеграции --------------------------- */}
-      <GlassCard delay={5}>
-        <CardTitle>{t.settings.integrations}</CardTitle>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-base font-bold">{t.settings.googleSheets}</p>
-              <p className="mt-0.5 truncate text-sm text-muted">
-                {integration
-                  ? (integration.google_email ?? t.settings.googleConnected)
-                  : t.settings.sheetIdHint}
+            {/* Квота не задаётся вручную: она растёт от выполнения, иначе теряет смысл. */}
+            <div>
+              <Label hint={t.settings.quotaInfoHint}>{t.settings.quotaInfo}</Label>
+              <p className="field flex items-center justify-between">
+                <span className="text-xl font-extrabold tabular-nums">
+                  {profile.current_quota ?? 5}
+                </span>
+                <span className="text-sm text-muted">
+                  {t.home.record}: {profile.daily_record ?? 0}
+                </span>
               </p>
             </div>
+          </div>
+        </GlassCard>
 
-            {integration ? (
-              <Button variant="ghost" onClick={() => void handleDisconnect()}>
-                {t.settings.googleDisconnect}
-              </Button>
+        {/* ------------------------- Щит и привал -------------------------- */}
+        {/* Здесь живёт только настройка автосейва: сами рычаги — на странице
+            рассылок, рядом с квотой, где решение и принимается. */}
+        <GlassCard delay={2}>
+          <CardTitle>{t.guard.title}</CardTitle>
+
+          {guard.ready ? (
+            <div className="space-y-4">
+              <div>
+                <Label>{t.guard.charges}</Label>
+                <p className="field flex items-center justify-between gap-3">
+                  <span className="text-xl font-extrabold tabular-nums">
+                    {guard.charges} / {SHIELD_MAX}
+                  </span>
+                  <span className="truncate text-sm text-muted">
+                    {guard.regenIn === 0
+                      ? t.guard.regenFull
+                      : tf(t.guard.regenShort, { n: guard.regenIn, unit: days(guard.regenIn) })}
+                  </span>
+                </p>
+              </div>
+
+              <Switch
+                label={t.guard.auto}
+                hint={guard.auto ? t.guard.autoHint : t.guard.autoOffHint}
+                checked={guard.auto}
+                onChange={(value) => {
+                  void setShieldAuto(value);
+                  flashSaved();
+                }}
+              />
+            </div>
+          ) : (
+            <p className="text-sm leading-relaxed text-muted">{t.guard.notReady}</p>
+          )}
+        </GlassCard>
+
+        {/* ---------------------------- Отдача ----------------------------- */}
+        <GlassCard delay={3}>
+          <CardTitle>{t.settings.feedback}</CardTitle>
+
+          <Switch
+            label={t.settings.sounds}
+            hint={t.settings.soundsHint}
+            checked={Boolean(profile.sound_enabled)}
+            onChange={(value) => {
+              void updateProfile({ sound_enabled: value });
+              flashSaved();
+            }}
+          />
+        </GlassCard>
+
+        {/* -------------------------- Уведомления --------------------------- */}
+        <GlassCard delay={4}>
+          <CardTitle>{t.settings.push}</CardTitle>
+
+          <p className="mb-3 text-sm text-muted">{t.settings.pushHint}</p>
+
+          <Button
+            variant={profile.push_enabled ? 'ghost' : 'primary'}
+            full
+            onClick={togglePush}
+            disabled={pushBusy || push === 'unsupported'}
+          >
+            {pushBusy ? <Spinner /> : null}
+            {profile.push_enabled ? t.settings.pushDisable : t.settings.pushEnable}
+          </Button>
+
+          {(pushNote || push === 'needs-install' || push === 'denied') && (
+            <p className="mt-3 rounded-xl border border-glass-border bg-white/[0.04] px-3 py-2.5 text-sm leading-relaxed text-white/70">
+              {pushNote ??
+                (push === 'needs-install' ? t.settings.pushUnsupported : t.settings.pushDenied)}
+            </p>
+          )}
+        </GlassCard>
+
+        {/* -------------------------- Интеграции --------------------------- */}
+        <GlassCard delay={5}>
+          <CardTitle>{t.settings.integrations}</CardTitle>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-base font-bold">{t.settings.googleSheets}</p>
+                <p className="mt-0.5 truncate text-sm text-muted">
+                  {integration
+                    ? (integration.google_email ?? t.settings.googleConnected)
+                    : t.settings.sheetIdHint}
+                </p>
+              </div>
+
+              {integration ? (
+                <Button variant="ghost" onClick={() => void handleDisconnect()}>
+                  {t.settings.googleDisconnect}
+                </Button>
+              ) : (
+                <Button onClick={() => window.location.assign('/api/google/connect')}>
+                  {t.settings.googleConnect}
+                </Button>
+              )}
+            </div>
+
+            {integration && (
+              <>
+                <div>
+                  <Field
+                    label={t.settings.sheetId}
+                    hint={t.common.optional}
+                    value={sheetId}
+                    onChange={(e) => setSheetId(e.target.value)}
+                    onBlur={saveSheetId}
+                    placeholder="1AbC…"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                  />
+                  {sheetId && (
+                    <a
+                      href={`https://docs.google.com/spreadsheets/d/${sheetId}/edit`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-flex min-h-[44px] items-center gap-1.5 text-sm font-semibold text-white/60 hover:text-white"
+                    >
+                      <ExternalLink size={14} />
+                      docs.google.com
+                    </a>
+                  )}
+                </div>
+
+                <Button variant="ghost" full onClick={handleSync} disabled={syncing}>
+                  {syncing ? <Spinner /> : <RefreshCw size={16} />}
+                  {syncing ? t.settings.syncing : t.settings.syncNow}
+                </Button>
+
+                <p className="text-sm text-muted">
+                  {t.settings.lastSync}:{' '}
+                  {integration.last_synced_at
+                    ? formatDateTime(integration.last_synced_at, lang)
+                    : t.settings.neverSynced}
+                </p>
+              </>
+            )}
+
+            {syncMessage && (
+              <p className="rounded-xl border border-glass-border bg-white/[0.04] px-3 py-2.5 text-sm leading-relaxed text-white/70">
+                {syncMessage}
+              </p>
+            )}
+          </div>
+        </GlassCard>
+
+        {/* ----------------------------- Язык ------------------------------ */}
+        <GlassCard delay={6}>
+          <CardTitle>{t.settings.language}</CardTitle>
+
+          <Segmented<Language>
+            value={lang}
+            onChange={(next) => {
+              setLang(next);
+              void updateProfile({ language: next });
+              flashSaved();
+            }}
+            options={[
+              { value: 'ru', label: t.settings.languageRu },
+              { value: 'en', label: t.settings.languageEn },
+            ]}
+          />
+        </GlassCard>
+
+        {/* ----------------------------- Данные ---------------------------- */}
+        <GlassCard delay={7}>
+          <CardTitle>{t.settings.data}</CardTitle>
+
+          <div className="space-y-3">
+            <Button variant="ghost" full onClick={exportJson} disabled={exporting}>
+              {exporting ? <Spinner /> : <Download size={16} />}
+              {exporting ? t.settings.exporting : t.settings.exportJson}
+            </Button>
+
+            {confirmClear ? (
+              <div className="space-y-3 rounded-2xl border border-[rgba(255,107,107,0.25)] bg-[rgba(255,107,107,0.06)] p-3">
+                <p className="text-sm leading-relaxed text-danger">
+                  {t.settings.clearOutreachConfirm}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="danger"
+                    className="flex-1"
+                    onClick={clearOutreach}
+                    disabled={clearing}
+                  >
+                    {clearing ? <Spinner /> : t.common.delete}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="flex-1"
+                    onClick={() => setConfirmClear(false)}
+                  >
+                    {t.common.cancel}
+                  </Button>
+                </div>
+              </div>
             ) : (
-              <Button onClick={() => window.location.assign('/api/google/connect')}>
-                {t.settings.googleConnect}
+              <Button variant="danger" full onClick={() => setConfirmClear(true)}>
+                <Trash2 size={16} />
+                {t.settings.clearOutreach}
               </Button>
             )}
           </div>
+        </GlassCard>
 
-          {integration && (
-            <>
-              <div>
-                <Field
-                  label={t.settings.sheetId}
-                  hint={t.common.optional}
-                  value={sheetId}
-                  onChange={(e) => setSheetId(e.target.value)}
-                  onBlur={saveSheetId}
-                  placeholder="1AbC…"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                />
-                {sheetId && (
-                  <a
-                    href={`https://docs.google.com/spreadsheets/d/${sheetId}/edit`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-2 inline-flex min-h-[44px] items-center gap-1.5 text-sm font-semibold text-white/60 hover:text-white"
-                  >
-                    <ExternalLink size={14} />
-                    docs.google.com
-                  </a>
-                )}
-              </div>
-
-              <Button variant="ghost" full onClick={handleSync} disabled={syncing}>
-                {syncing ? <Spinner /> : <RefreshCw size={16} />}
-                {syncing ? t.settings.syncing : t.settings.syncNow}
-              </Button>
-
-              <p className="text-sm text-muted">
-                {t.settings.lastSync}:{' '}
-                {integration.last_synced_at
-                  ? formatDateTime(integration.last_synced_at, lang)
-                  : t.settings.neverSynced}
-              </p>
-            </>
-          )}
-
-          {syncMessage && (
-            <p className="rounded-xl border border-glass-border bg-white/[0.04] px-3 py-2.5 text-sm leading-relaxed text-white/70">
-              {syncMessage}
-            </p>
-          )}
-        </div>
-      </GlassCard>
-
-      {/* ----------------------------- Язык ------------------------------ */}
-      <GlassCard delay={6}>
-        <CardTitle>{t.settings.language}</CardTitle>
-
-        <Segmented<Language>
-          value={lang}
-          onChange={(next) => {
-            setLang(next);
-            void updateProfile({ language: next });
-            flashSaved();
-          }}
-          options={[
-            { value: 'ru', label: t.settings.languageRu },
-            { value: 'en', label: t.settings.languageEn },
-          ]}
-        />
-      </GlassCard>
-
-      {/* ----------------------------- Данные ---------------------------- */}
-      <GlassCard delay={7}>
-        <CardTitle>{t.settings.data}</CardTitle>
-
-        <div className="space-y-3">
-          <Button variant="ghost" full onClick={exportJson} disabled={exporting}>
-            {exporting ? <Spinner /> : <Download size={16} />}
-            {exporting ? t.settings.exporting : t.settings.exportJson}
-          </Button>
-
-          {confirmClear ? (
-            <div className="space-y-3 rounded-2xl border border-[rgba(255,107,107,0.25)] bg-[rgba(255,107,107,0.06)] p-3">
-              <p className="text-sm leading-relaxed text-danger">
-                {t.settings.clearOutreachConfirm}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="danger"
-                  className="flex-1"
-                  onClick={clearOutreach}
-                  disabled={clearing}
-                >
-                  {clearing ? <Spinner /> : t.common.delete}
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="flex-1"
-                  onClick={() => setConfirmClear(false)}
-                >
-                  {t.common.cancel}
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <Button variant="danger" full onClick={() => setConfirmClear(true)}>
-              <Trash2 size={16} />
-              {t.settings.clearOutreach}
-            </Button>
-          )}
-        </div>
-      </GlassCard>
-
-      {/* -------------------------- О приложении ------------------------- */}
-      <GlassCard delay={8}>
-        <CardTitle right={<span className="text-sm text-white/35">{APP_VERSION}</span>}>
-          {t.settings.about}
-        </CardTitle>
-        <p className="text-sm leading-relaxed text-muted">{t.settings.aboutText}</p>
-      </GlassCard>
+        {/* -------------------------- О приложении ------------------------- */}
+        <GlassCard delay={8}>
+          <CardTitle right={<span className="text-sm text-white/35">{APP_VERSION}</span>}>
+            {t.settings.about}
+          </CardTitle>
+          <p className="text-sm leading-relaxed text-muted">{t.settings.aboutText}</p>
+        </GlassCard>
+      </DeskGrid>
     </div>
   );
 }

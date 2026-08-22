@@ -38,7 +38,7 @@ export function AchievementsCard({ input }: { input: AchievementInput }) {
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.25, delay: Math.min(i, 10) * 0.03 }}
-            className={`rounded-2xl border p-3 ${
+            className={`flex flex-col rounded-2xl border p-3 ${
               row.done
                 ? 'border-[rgba(255,209,102,0.3)] bg-[rgba(255,209,102,0.07)]'
                 : 'border-glass-border bg-white/[0.02]'
@@ -57,7 +57,9 @@ export function AchievementsCard({ input }: { input: AchievementInput }) {
               </p>
             </div>
 
-            <p className="mt-2 text-sm font-extrabold tabular-nums">
+            {/* mt-auto прижимает число с полоской к низу: в паре ячеек заголовки
+                разной длины, и без этого полоски соседей не совпадают по высоте. */}
+            <p className="mt-auto pt-2 text-sm font-extrabold tabular-nums">
               <span className={row.done ? 'text-warn' : 'text-white/60'}>
                 {Math.min(row.value, row.target)}
               </span>

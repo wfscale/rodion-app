@@ -22,17 +22,16 @@ import { OutreachCounter } from '@/components/home/OutreachCounter';
 import { QuickAddOutreach } from '@/components/home/QuickAddOutreach';
 import { RoundNudge } from '@/components/home/RoundNudge';
 import { ModeBlock } from '@/components/mode/ModeBlock';
-import { BlueprintCard } from '@/components/outreach/BlueprintCard';
 import { ContactCards } from '@/components/outreach/ContactCards';
 import { ContactTable, type TableSort } from '@/components/outreach/ContactTable';
 import { ConversationSheet } from '@/components/outreach/ConversationSheet';
 import { DialogueCard } from '@/components/outreach/DialogueCard';
 import { FollowUpList } from '@/components/outreach/FollowUpList';
+import { ForecastCard } from '@/components/outreach/ForecastCard';
 import { FunnelChart } from '@/components/outreach/FunnelChart';
 import { HourlyCard } from '@/components/outreach/HourlyCard';
 import { NicheAnalytics } from '@/components/outreach/NicheAnalytics';
 import { OutreachFilters } from '@/components/outreach/OutreachFilters';
-import { PatternsCard } from '@/components/outreach/PatternsCard';
 import { PrimeList } from '@/components/outreach/PrimeList';
 import { AccentPicker } from '@/components/progress/AccentPicker';
 import { AchievementsCard } from '@/components/progress/AchievementsCard';
@@ -45,7 +44,8 @@ import { BottomNav } from '@/components/BottomNav';
 import type { ChatMessage } from '@/lib/conversation';
 import { EMPTY_FILTERS, nicheOptions, type OutreachFilters as Filters } from '@/lib/outreach-filter';
 import type { GuardView } from '@/lib/shield';
-import type { ActivityEntry, DailyTask, OutreachContact, Reminder } from '@/lib/types';
+import type { HomeTask } from '@/components/AppProvider';
+import type { ActivityEntry, OutreachContact, Reminder } from '@/lib/types';
 
 const TODAY = '2026-08-13';
 const NOW = `${TODAY}T12:00`;
@@ -92,6 +92,8 @@ const CONTACTS: OutreachContact[] = [
   contact({ name: '@olga_art', niche: 'Творчество', status: 'closed' }),
   // Ответ есть, исход отрицательный — строка обязана быть красной.
   contact({ name: '@igor_sales', niche: 'Продажи', status: 'replied_no' }),
+  // Прочитал и снёс переписку — голубым, не красным: дверь не захлопнули.
+  contact({ name: '@kate_nutri', niche: 'Нутрициология', status: 'deleted_chat' }),
 ];
 
 const ACTIVITY: ActivityEntry[] = [
@@ -101,9 +103,11 @@ const ACTIVITY: ActivityEntry[] = [
   { id: '4', user_id: 'u', type: 'sent', contact_name: '@vlad_money', contact_niche: 'Финансы', detail: null, xp_earned: 8, created_at: '2026-08-13T10:59:00Z' },
 ];
 
-const TASKS: DailyTask[] = [
-  { id: 't1', user_id: 'u', date: TODAY, text: 'Написать оффер для фитнес-ниши', completed: false, created_at: '' },
-  { id: 't2', user_id: 'u', date: TODAY, text: 'Ответить Дмитрию', completed: true, created_at: '' },
+/* Список дня: свои задачи и поднятая из проекта — с именем эксперта. */
+const TASKS: HomeTask[] = [
+  { id: 't1', text: 'Написать оффер для фитнес-ниши', completed: false, source: 'day', project: null },
+  { id: 't2', text: 'Ответить Дмитрию', completed: true, source: 'day', project: null },
+  { id: 't3', text: 'Собрать 5 кастдевов', completed: false, source: 'project', project: '@anna_english' },
 ];
 
 const reminder = (over: Partial<Reminder>): Reminder =>
@@ -126,15 +130,6 @@ const REMINDERS: Reminder[] = [
   reminder({ title: 'Собрать разбор ниши', due_at: `${TODAY}T20:00` }),
   reminder({ title: 'Прозвон по базе', due_at: '2026-08-15T11:00' }),
   reminder({ title: 'Старая задача', due_at: '2026-08-01T11:00', done: true }),
-];
-
-const OFFERS = [
-  { content: 'Привет! Посмотрел твой блог, зацепило про запуск. Могу собрать воронку — интересно?', result: 'replied' },
-  { content: 'Привет! Смотрел последний запуск, сильно. Вижу, где теряешь 30% выручки. Обсудим?', result: 'replied_no' },
-  { content: 'Привет! Заметил, что у тебя нет продукта под холодную аудиторию. Давай покажу схему?', result: 'call' },
-  { content: 'Предлагаю сотрудничество на выгодных условиях', result: 'sent' },
-  { content: 'Предлагаю услуги продюсера, большой опыт работы с экспертами', result: 'sent' },
-  { content: 'Здравствуйте, готов обсудить совместную работу', result: 'sent' },
 ];
 
 /** Страховка серии: базовое состояние, от которого пляшут все витрины ниже. */
@@ -166,7 +161,7 @@ export default function PreviewPage() {
 
   return (
     <main className="md:pl-[240px]">
-      <div className="pb-content mx-auto w-full max-w-lg space-y-4 px-4 pt-4 md:max-w-5xl md:px-6">
+      <div className="pb-content mx-auto w-full max-w-lg space-y-4 px-4 pt-4 md:max-w-none md:px-8 xl:px-10 2xl:max-w-[1720px]">
         <HomeHeader
           streak={3}
           guard="shield"
@@ -238,6 +233,16 @@ export default function PreviewPage() {
 
         <FunnelChart sent={247} replied={11} calls={3} closed={1} onLevelClick={() => undefined} />
 
+        <NicheAnalytics contacts={CONTACTS} />
+
+        <PrimeList contacts={CONTACTS} today={TODAY} onOpen={() => undefined} />
+
+        <HourlyCard contacts={CONTACTS} />
+
+        {/* Прогноз: на моковой выборке рассылок мало, поэтому видно и
+            состояние «данных пока не хватает». */}
+        <ForecastCard contacts={CONTACTS} />
+
         <FollowUpList
           contacts={CONTACTS}
           reminders={REMINDERS}
@@ -255,14 +260,6 @@ export default function PreviewPage() {
           niches={nicheOptions(CONTACTS)}
         />
 
-        <NicheAnalytics contacts={CONTACTS} />
-
-        <PrimeList contacts={CONTACTS} today={TODAY} onOpen={() => undefined} />
-
-        <HourlyCard contacts={CONTACTS} />
-
-        <BlueprintCard samples={OFFERS} />
-        <PatternsCard samples={OFFERS} />
         <DialogueCard contacts={CONTACTS} />
 
         <ContactCards contacts={CONTACTS} onOpenContact={() => undefined} highlightId={null} />

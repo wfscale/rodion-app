@@ -10,10 +10,10 @@ import { useLanguage } from '@/components/LanguageProvider';
 import { LockedFeature } from '@/components/LockedFeature';
 import { OfferCard } from '@/components/OfferCard';
 import { OfferSheet, type OfferDraft } from '@/components/OfferSheet';
-import { BlueprintCard } from '@/components/outreach/BlueprintCard';
 import { ContactCards } from '@/components/outreach/ContactCards';
 import { ContactSheet, type ContactDraft } from '@/components/outreach/ContactSheet';
 import { ContactTable, type TableSort } from '@/components/outreach/ContactTable';
+import { ForecastCard } from '@/components/outreach/ForecastCard';
 import { ConversationSheet } from '@/components/outreach/ConversationSheet';
 import { DialogueCard } from '@/components/outreach/DialogueCard';
 import { FollowUpList } from '@/components/outreach/FollowUpList';
@@ -21,11 +21,18 @@ import { FunnelChart, type FunnelTarget } from '@/components/outreach/FunnelChar
 import { HourlyCard } from '@/components/outreach/HourlyCard';
 import { NicheAnalytics } from '@/components/outreach/NicheAnalytics';
 import { OutreachFilters } from '@/components/outreach/OutreachFilters';
-import { PatternsCard } from '@/components/outreach/PatternsCard';
 import { PrimeList } from '@/components/outreach/PrimeList';
 import { PulseBar } from '@/components/PulseBar';
 import { ReminderSheet } from '@/components/reminders/ReminderSheet';
-import { Button, Collapsible, EmptyState, FullPageLoader, PageTitle, Segmented } from '@/components/ui';
+import {
+  Button,
+  Collapsible,
+  DeskColumns,
+  EmptyState,
+  FullPageLoader,
+  PageTitle,
+  Segmented,
+} from '@/components/ui';
 import { useOffers } from '@/hooks/useOffers';
 import {
   applyOutreachFilters,
@@ -35,7 +42,6 @@ import {
 } from '@/lib/outreach-filter';
 import {
   CALL_STATUSES,
-  normalizeStatus,
   REPLIED_STATUSES,
   SENT_STATUSES,
   type ContactStatus,
@@ -125,15 +131,6 @@ export default function OutreachPage() {
     );
   }, [offersApi.offers, query]);
 
-  /** Вход для разбора паттернов: текст оффера + исход. */
-  const patternSamples = useMemo(
-    () =>
-      offersApi.offers
-        .filter((offer) => (offer.content ?? '').trim().length > 0)
-        .map((offer) => ({ content: offer.content, result: normalizeStatus(offer.result) })),
-    [offersApi.offers],
-  );
-
   if (app.loading || !app.profile) return <FullPageLoader />;
 
   /* ------------------------------------------------------------------ */
@@ -183,7 +180,77 @@ export default function OutreachPage() {
     setFilters((current) => ({ ...current, statuses: group[target] ?? [target as ContactStatus] }));
   }
 
-  const body = (
+  /*
+   * Правая колонка десктопа: цифры и страховка.
+   *
+   * Это фон работы — то, на что смотрят, а не то, чем работают. На телефоне
+   * она идёт следом за рабочим списком, как и раньше; на мониторе уезжает
+   * вбок и перестаёт отодвигать таблицу экспертов вниз.
+   */
+  const side = (
+    <>
+      {/* Квота дня */}
+      <GlassCard delay={2}>
+        <div className="mb-2 flex items-baseline justify-between gap-3">
+          <p className="text-sm font-bold">
+            {t.common.today}{' '}
+            <span className={app.quota.closed ? 'text-success' : 'text-white'}>
+              {app.quota.sent}
+            </span>
+            <span className="text-white/35"> / {app.quota.quota}</span>
+          </p>
+          <span className="text-xs text-white/35">
+            {t.home.record}: {app.quota.record}
+          </span>
+        </div>
+        <PulseBar pct={app.quota.pct} color={app.quota.closed ? '#64FF8C' : '#FFFFFF'} />
+      </GlassCard>
+
+      {/*
+        Страховка серии — сразу под квотой, потому что решение «сегодня не
+        вытяну» принимается ровно в тот момент, когда смотришь на квоту.
+      */}
+      <ShieldCard
+        guard={app.guard}
+        sent={app.quota.sent}
+        quota={app.quota.quota}
+        streak={app.quota.streak}
+        onArm={() => void app.armShield()}
+        onDisarm={() => void app.disarmShield()}
+        onPause={(on) => void app.setPause(on)}
+        onAuto={(value) => void app.setShieldAuto(value)}
+        delay={3}
+      />
+
+      {/* Цена события в рассылках: воронка говорит «сколько уже»,
+          эта карточка — «сколько ещё». */}
+      <ForecastCard contacts={app.contacts} delay={4} />
+
+      {/* Воронка */}
+      <FunnelChart
+        sent={stats.sent}
+        replied={stats.replied}
+        calls={stats.calls}
+        closed={stats.closed}
+        onLevelClick={filterByFunnel}
+      />
+
+      {canNiches ? (
+        <NicheAnalytics contacts={app.contacts} />
+      ) : (
+        <LockedFeature featureKey="niches" requiredLevel={FEATURE_LEVEL.niches} />
+      )}
+
+      {canPrime && (
+        <PrimeList contacts={app.contacts} today={app.today} onOpen={openForContact} />
+      )}
+
+      {canHourly && <HourlyCard contacts={app.contacts} />}
+    </>
+  );
+
+  /** Левая колонка: то, чем работают руками. */
+  const main = (
     <>
       {/* Быстрый ввод и кнопка новой рассылки — всегда наверху. */}
       <div className="flex gap-2">
@@ -208,15 +275,6 @@ export default function OutreachPage() {
         </button>
       </div>
 
-      {/* Воронка */}
-      <FunnelChart
-        sent={stats.sent}
-        replied={stats.replied}
-        calls={stats.calls}
-        closed={stats.closed}
-        onLevelClick={filterByFunnel}
-      />
-
       {/* Кому написать сегодня — рабочий список, выше таблицы */}
       <FollowUpList
         contacts={app.contacts}
@@ -228,57 +286,6 @@ export default function OutreachPage() {
         onOpen={openForContact}
         onCompleteReminder={(id) => void app.toggleReminder(id)}
       />
-
-      {/* Квота дня */}
-      <GlassCard delay={2}>
-        <div className="mb-2 flex items-baseline justify-between gap-3">
-          <p className="text-sm font-bold">
-            {t.common.today}{' '}
-            <span className={app.quota.closed ? 'text-success' : 'text-white'}>
-              {app.quota.sent}
-            </span>
-            <span className="text-white/35"> / {app.quota.quota}</span>
-          </p>
-          <span className="text-xs text-white/35">
-            {t.home.record}: {app.quota.record}
-          </span>
-        </div>
-        <PulseBar pct={app.quota.pct} color={app.quota.closed ? '#64FF8C' : '#FFFFFF'} />
-      </GlassCard>
-
-      {/*
-        Страховка серии — сразу под квотой, потому что решение «сегодня не
-        вытяну» принимается ровно в тот момент, когда смотришь на квоту.
-        Ниже, за списком экспертов, до неё дошли бы только специально.
-      */}
-      <ShieldCard
-        guard={app.guard}
-        sent={app.quota.sent}
-        quota={app.quota.quota}
-        streak={app.quota.streak}
-        onArm={() => void app.armShield()}
-        onDisarm={() => void app.disarmShield()}
-        onPause={(on) => void app.setPause(on)}
-        onAuto={(value) => void app.setShieldAuto(value)}
-        delay={3}
-      />
-
-      {/*
-        Аналитика стоит ВЫШЕ списка экспертов намеренно. Список растёт
-        бесконечно, аналитика — нет; если оставить её внизу, то на тридцатом
-        контакте до неё уже никто не долистает.
-      */}
-      {canNiches ? (
-        <NicheAnalytics contacts={app.contacts} />
-      ) : (
-        <LockedFeature featureKey="niches" requiredLevel={FEATURE_LEVEL.niches} />
-      )}
-
-      {canPrime && (
-        <PrimeList contacts={app.contacts} today={app.today} onOpen={openForContact} />
-      )}
-
-      {canHourly && <HourlyCard contacts={app.contacts} />}
 
       {/* Поиск */}
       <label className="relative block">
@@ -444,7 +451,10 @@ export default function OutreachPage() {
       </div>
 
       {tab === 'contacts' ? (
-        body
+        // stickySide: таблица экспертов длинная, и квота со щитом обязаны
+        // оставаться на виду, пока её листаешь, — иначе решение «хватит на
+        // сегодня» принимается вслепую.
+        <DeskColumns stickySide main={main} side={side} />
       ) : canOffers ? (
         <>
           <Button
@@ -458,12 +468,9 @@ export default function OutreachPage() {
             {t.offers.addTitle}
           </Button>
 
-          {/* Разбор стоит над библиотекой: смысл вкладки не в том, чтобы
-              хранить тексты, а в том, чтобы понимать, какие работают.
-              Порядок внутри — от вывода к данным: сначала «что писать»,
-              потом «почему именно так», потом сами цифры. */}
-          <BlueprintCard samples={patternSamples} />
-          <PatternsCard samples={patternSamples} />
+          {/* Разбор текстов офферов убран: им не пользовались, а признаки
+              вроде «есть цифры» ничего не решали. Осталось то, что реально
+              ломает сделки, — молчание в переписке после ответа. */}
           {app.conversationsReady && <DialogueCard contacts={app.contacts} />}
 
           {visibleOffers.length === 0 ? (
