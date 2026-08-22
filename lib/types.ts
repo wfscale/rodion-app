@@ -308,6 +308,23 @@ export type Reminder = {
   updated_at: string;
 };
 
+/**
+ * Заготовка — готовое сообщение, которое отправляют не один раз.
+ *
+ * used_count здесь не статистика, а порядок: список сам всплывает тем, чем
+ * реально пользуешься, и не превращается в архив, который надо разбирать.
+ */
+export type Snippet = {
+  id: string;
+  user_id: string;
+  title: string;
+  content: string;
+  used_count: number;
+  last_used_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type XpTransaction = {
   id: string;
   user_id: string;
@@ -444,6 +461,7 @@ export type Database = {
       outreach_contacts: Table<OutreachContact, 'user_id' | 'name'>;
       offers: Table<Offer, 'user_id' | 'title' | 'content'>;
       notes: Table<Note, 'user_id' | 'content'>;
+      snippets: Table<Snippet, 'user_id' | 'title' | 'content'>;
       reminders: Table<Reminder, 'user_id' | 'title' | 'due_at'>;
       xp_transactions: Table<XpTransaction, 'user_id' | 'amount' | 'reason'>;
       activity_feed: Table<ActivityEntry, 'user_id' | 'type'>;
@@ -466,6 +484,10 @@ export type Database = {
       };
       level_for_xp: {
         Args: { p_xp: number };
+        Returns: number;
+      };
+      use_snippet: {
+        Args: { p_id: string };
         Returns: number;
       };
     };

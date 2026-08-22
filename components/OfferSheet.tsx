@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { BottomSheet } from '@/components/BottomSheet';
 import { useLanguage } from '@/components/LanguageProvider';
 import { Button, Field, Label, Select, TextArea } from '@/components/ui';
+import { copyText } from '@/lib/clipboard';
 import {
   normalizeStatus,
   OFFER_RESULTS,
@@ -12,32 +13,6 @@ import {
   type OfferResult,
   type OutreachContact,
 } from '@/lib/types';
-
-/** Копирование с фолбэком: Clipboard API недоступен вне HTTPS. */
-async function copyText(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // падаем в фолбэк ниже
-  }
-
-  try {
-    const area = document.createElement('textarea');
-    area.value = text;
-    area.style.position = 'fixed';
-    area.style.opacity = '0';
-    document.body.appendChild(area);
-    area.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(area);
-    return ok;
-  } catch {
-    return false;
-  }
-}
 
 export type OfferDraft = {
   title: string;
