@@ -384,25 +384,51 @@ export function DeskColumns({
   side,
   /** Держать правую колонку в поле зрения при прокрутке длинной левой. */
   stickySide = false,
+  /**
+   * Показать правую колонку первой на телефоне, оставив её справа на мониторе.
+   *
+   * Нужно там, где справа лежат цифры, а слева работа: на мониторе цифры
+   * видно и так, боковым зрением, а на телефоне колонки идут одна за другой,
+   * и без этого до них пришлось бы листать через весь рабочий список.
+   */
+  sideFirst = false,
   className = '',
 }: {
   main: ReactNode;
   side: ReactNode;
   stickySide?: boolean;
+  sideFirst?: boolean;
   className?: string;
 }) {
   // Пустая правая колонка (режим фокуса) не должна оставлять после себя
   // половину экрана пустоты — сетка в этом случае просто не нужна.
   if (!side) return <div className={`space-y-4 ${className}`}>{main}</div>;
 
+  // Порядок в DOM задаёт порядок на телефоне, а на мониторе колонки
+  // расставляются явно — поэтому одна и та же разметка читается по-разному
+  // на двух устройствах, и дублировать блоки не нужно.
+  const mainCol = (
+    <div className={`min-w-0 space-y-4 ${sideFirst ? 'lg:col-start-1 lg:row-start-1' : ''}`}>
+      {main}
+    </div>
+  );
+
+  const sideCol = (
+    <div
+      className={`min-w-0 space-y-4 ${sideFirst ? 'lg:col-start-2 lg:row-start-1' : ''} ${
+        stickySide ? 'lg:sticky lg:top-10' : ''
+      }`}
+    >
+      {side}
+    </div>
+  );
+
   return (
     <div
       className={`grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] ${className}`}
     >
-      <div className="min-w-0 space-y-4">{main}</div>
-      <div className={`min-w-0 space-y-4 ${stickySide ? 'lg:sticky lg:top-10' : ''}`}>
-        {side}
-      </div>
+      {sideFirst ? sideCol : mainCol}
+      {sideFirst ? mainCol : sideCol}
     </div>
   );
 }

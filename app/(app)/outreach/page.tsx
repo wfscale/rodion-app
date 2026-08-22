@@ -181,11 +181,14 @@ export default function OutreachPage() {
   }
 
   /*
-   * Правая колонка десктопа: цифры и страховка.
+   * Правая колонка: цифры сверху вниз в порядке важности — сегодняшняя
+   * квота, воронка за всё время, цена созвона и закрытия, страховка серии,
+   * разбор по нишам.
    *
-   * Это фон работы — то, на что смотрят, а не то, чем работают. На телефоне
-   * она идёт следом за рабочим списком, как и раньше; на мониторе уезжает
-   * вбок и перестаёт отодвигать таблицу экспертов вниз.
+   * На телефоне она идёт ПЕРВОЙ (sideFirst у DeskColumns): на мониторе цифры
+   * видно боковым зрением и без прокрутки, а на телефоне колонки встают одна
+   * за другой, и, оставь их снизу, до статистики пришлось бы листать через
+   * весь список экспертов.
    */
   const side = (
     <>
@@ -205,6 +208,15 @@ export default function OutreachPage() {
         </div>
         <PulseBar pct={app.quota.pct} color={app.quota.closed ? '#64FF8C' : '#FFFFFF'} />
       </GlassCard>
+
+      {/* Воронка за всё время: написано, ответили, созвоны, закрытия. */}
+      <FunnelChart
+        sent={stats.sent}
+        replied={stats.replied}
+        calls={stats.calls}
+        closed={stats.closed}
+        onLevelClick={filterByFunnel}
+      />
 
       {/* Цена события в рассылках: воронка говорит «сколько уже»,
           эта карточка — «сколько ещё». */}
@@ -244,46 +256,6 @@ export default function OutreachPage() {
   /** Левая колонка: то, чем работают руками. */
   const main = (
     <>
-      {/*
-        Воронка — первое, что видно на странице, и на телефоне тоже: заходя
-        сюда, в первую очередь смотрят «сколько всего написано и что из этого
-        вышло». Раньше она лежала в правой колонке, то есть на телефоне
-        оказывалась ниже всего списка экспертов, и до неё не долистывали.
-
-        Не на всю ширину, а в левой колонке: на мониторе полоса воронки в
-        1200px превращается в нить, по которой нечего читать.
-      */}
-      <FunnelChart
-        sent={stats.sent}
-        replied={stats.replied}
-        calls={stats.calls}
-        closed={stats.closed}
-        onLevelClick={filterByFunnel}
-      />
-
-      {/* Быстрый ввод и кнопка новой рассылки. */}
-      <div className="flex gap-2">
-        <Button
-          full
-          onClick={() => {
-            setOpenContact(null);
-            setSheetOpen(true);
-          }}
-        >
-          <Plus size={18} />
-          {t.outreach.newOutreach}
-        </Button>
-
-        <button
-          type="button"
-          onClick={() => setFullscreen((v) => !v)}
-          aria-label={fullscreen ? t.outreach.exitFullscreen : t.outreach.fullscreen}
-          className="btn-ghost hidden w-14 shrink-0 md:flex"
-        >
-          {fullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-        </button>
-      </div>
-
       {/* Кому написать сегодня — рабочий список, выше таблицы */}
       <FollowUpList
         contacts={app.contacts}
@@ -460,10 +432,41 @@ export default function OutreachPage() {
       </div>
 
       {tab === 'contacts' ? (
-        // stickySide: таблица экспертов длинная, и квота со щитом обязаны
-        // оставаться на виду, пока её листаешь, — иначе решение «хватит на
-        // сегодня» принимается вслепую.
-        <DeskColumns stickySide main={main} side={side} />
+        <>
+          {/*
+            Кнопка стоит НАД колонками, а не внутри левой: добавить рассылку —
+            главное действие страницы, и оно обязано быть под рукой сразу, не
+            через прокрутку статистики. На мониторе она не тянется во всю
+            ширину — белая полоса в 1200px весит больше, чем действие.
+          */}
+          <div className="flex gap-2">
+            <Button
+              full
+              className="lg:w-auto lg:flex-none lg:px-8"
+              onClick={() => {
+                setOpenContact(null);
+                setSheetOpen(true);
+              }}
+            >
+              <Plus size={18} />
+              {t.outreach.newOutreach}
+            </Button>
+
+            <button
+              type="button"
+              onClick={() => setFullscreen((v) => !v)}
+              aria-label={fullscreen ? t.outreach.exitFullscreen : t.outreach.fullscreen}
+              className="btn-ghost hidden w-14 shrink-0 md:flex"
+            >
+              {fullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            </button>
+          </div>
+
+          {/* stickySide: таблица экспертов длинная, и цифры обязаны
+              оставаться на виду, пока её листаешь, — иначе решение «хватит
+              на сегодня» принимается вслепую. */}
+          <DeskColumns stickySide sideFirst main={main} side={side} />
+        </>
       ) : canOffers ? (
         <>
           <Button
