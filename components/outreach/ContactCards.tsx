@@ -7,7 +7,7 @@ import { statusTone, telegramUrl } from '@/components/outreach/ContactSheet';
 import { Badge, EmptyState } from '@/components/ui';
 import { daysBetween, getLogicalDate } from '@/lib/date';
 import { followUpState, needsTouch } from '@/lib/followup';
-import { NEGATIVE_STATUSES, normalizeStatus, type OutreachContact } from '@/lib/types';
+import { HARSH_STATUSES, normalizeStatus, type OutreachContact } from '@/lib/types';
 
 /**
  * Дней с касания не хранится в базе — считается каждый раз при рендере,
@@ -46,14 +46,17 @@ export function ContactCards({
         const n = daysSince(contact.first_contact_date);
         const fresh = contact.id === highlightId;
 
-        // Ровно те же два сигнала, что и в таблице: красный — дверь закрылась,
-        // жёлтый — сегодня пора коснуться.
-        const negative = NEGATIVE_STATUSES.includes(normalizeStatus(contact.status));
+        // Ровно те же три сигнала, что и в таблице: красный — дверью хлопнули
+        // в лицо, голубой — чат удалили без отказа, жёлтый — пора коснуться.
+        const status = normalizeStatus(contact.status);
+        const harsh = HARSH_STATUSES.includes(status);
+        const deleted = status === 'deleted_chat';
         const due =
-          !negative &&
+          !harsh &&
+          !deleted &&
           needsTouch(
             followUpState({
-              status: contact.status,
+              status,
               lastTouchAt: contact.last_touch_at,
               touchCount: contact.touch_count ?? 1,
               muted: Boolean(contact.muted),
@@ -92,11 +95,13 @@ export function ContactCards({
               boxShadow: { duration: 1, ease: 'linear' },
             }}
             className={`glass cursor-pointer border-l-2 p-4 active:scale-[0.99] ${
-              negative
+              harsh
                 ? 'border-l-[#FF6B6B] bg-[rgba(255,107,107,0.07)]'
-                : due
-                  ? 'border-l-[#FFD166]'
-                  : 'border-l-transparent'
+                : deleted
+                  ? 'border-l-[#6BC5FF] bg-[rgba(107,197,255,0.06)]'
+                  : due
+                    ? 'border-l-[#FFD166]'
+                    : 'border-l-transparent'
             }`}
           >
             <div className="flex items-start gap-3">
@@ -106,7 +111,9 @@ export function ContactCards({
                   <p className="mt-0.5 truncate text-sm text-muted">{contact.niche}</p>
                 )}
               </div>
-              <Badge tone={statusTone(contact.status)}>{t.statuses[contact.status]}</Badge>
+              {/* Бейдж рисуется по приведённому статусу: в базе ещё живут
+                  значения старой шкалы, и в словаре их ключей нет. */}
+              <Badge tone={statusTone(status)}>{t.statuses[status]}</Badge>
             </div>
 
             <div className="mt-3 flex items-center justify-between gap-3">

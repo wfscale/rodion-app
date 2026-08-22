@@ -14,6 +14,11 @@ export type Language = 'ru' | 'en';
  * Статуса «Отказ» здесь нет намеренно: он дублировал «Ответил — отказ», а два
  * почти одинаковых слова в списке заставляли выбирать между ними каждый раз.
  * Отказ без ответа — это просто молчание, для него есть «Отправлено».
+ *
+ * «Удалил чат» — отдельный исход, а не разновидность блокировки. Человек не
+ * закрывал дверь: он прочитал и убрал переписку с глаз. Писать туда больше
+ * незачем ровно так же, но складывать это в «Заблокировал» значит завышать
+ * себе долю резких отказов и делать выводы про офферы по кривым цифрам.
  */
 export const CONTACT_STATUSES = [
   'not_sent',
@@ -21,6 +26,7 @@ export const CONTACT_STATUSES = [
   'read',
   'replied',
   'replied_no',
+  'deleted_chat',
   'blocked',
   'call',
   'closed',
@@ -35,6 +41,8 @@ export type ContactStatus = (typeof CONTACT_STATUSES)[number];
 export const LEGACY_STATUS_ALIASES: Record<string, ContactStatus> = {
   refused: 'replied_no',
   ignored: 'replied_no',
+  deleted: 'deleted_chat',
+  chat_deleted: 'deleted_chat',
 };
 
 /** Приводит любое значение статуса к текущей шкале. */
@@ -61,12 +69,21 @@ export const SENT_STATUSES: ContactStatus[] = [
   'read',
   'replied',
   'replied_no',
+  'deleted_chat',
   'blocked',
   'call',
   'closed',
 ];
-/** Исходы, которые подсвечиваются красным: дверь закрылась. */
-export const NEGATIVE_STATUSES: ContactStatus[] = ['replied_no', 'blocked'];
+/**
+ * Исходы, после которых работа с человеком окончена.
+ *
+ * «Удалил чат» сюда входит: писать некуда. Но красным он не подсвечивается —
+ * см. statusTone(): резкий отказ и молчаливое удаление переписки читаются
+ * по-разному, и валить их в один цвет значит терять эту разницу.
+ */
+export const NEGATIVE_STATUSES: ContactStatus[] = ['replied_no', 'deleted_chat', 'blocked'];
+/** Исходы, которые подсвечиваются красным: дверь закрыли в лицо. */
+export const HARSH_STATUSES: ContactStatus[] = ['replied_no', 'blocked'];
 
 /**
  * Результат оффера — это и есть статус контакта, которому его отправили.
@@ -96,8 +113,44 @@ export type Checklist = Record<string, boolean>;
 export type CustomTask = { id: string; title: string };
 export type StatusHistoryEntry = { status: ContactStatus; at: string };
 
-/** Этап проекта. */
-export type ProjectStage = { id: string; title: string; done: boolean };
+/**
+ * Этап проекта.
+ *
+ * id совпадает с шагом воронки продюсирования из lib/pipeline.ts — по нему
+ * подтягивается название и подсказка. У добавленного вручную этапа id
+ * случайный, и тогда работает сохранённый title.
+ *
+ * due — примерная дата, к которой этап должен закончиться. Именно примерная:
+ * жёсткий срок на кастдевах, которые зависят от чужого расписания, — это
+ * гарантированно просроченная задача и повод бросить план целиком.
+ */
+export type ProjectStage = { id: string; title: string; done: boolean; due?: string | null };
+
+/** Активы эксперта на площадках. Пустое поле означает «не замеряли». */
+export type ProjectAssets = {
+  ig_followers?: number | null;
+  ig_reach?: number | null;
+  tg_subs?: number | null;
+  tg_reach?: number | null;
+};
+
+/** Ключи активов в том порядке, в каком они показываются. */
+export const ASSET_KEYS = ['ig_followers', 'ig_reach', 'tg_subs', 'tg_reach'] as const;
+export type AssetKey = (typeof ASSET_KEYS)[number];
+
+/**
+ * Исход проекта.
+ *
+ * Этап живёт в stages, а не здесь: статус отвечает только на вопрос, чем
+ * дело кончилось. 'lost' вместо удаления — иначе из истории пропадает сам
+ * факт, что подход был, и кажется, будто работы было меньше, чем на самом деле.
+ */
+export const PROJECT_STATUSES = ['active', 'done', 'lost'] as const;
+export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
+
+/** Область задачи проекта: дневная поднимается в список дня, недельная — нет. */
+export const TASK_SCOPES = ['day', 'week'] as const;
+export type TaskScope = (typeof TASK_SCOPES)[number];
 
 // ---------------------------------------------------------------------------
 // Строки таблиц
@@ -290,11 +343,43 @@ export type Project = {
   contact_id: string | null;
   expert_name: string;
   niche: string | null;
-  status: 'prep' | 'launch' | 'done';
+  status: ProjectStatus;
   stages: ProjectStage[];
+  /** Дата запуска — конец проекта. */
   launch_date: string | null;
+  /** Дата старта работы. */
+  started_at: string | null;
   deal_amount: number;
   note: string | null;
+
+  /** Куда вернуться, чтобы вспомнить, с кем работаешь. */
+  instagram_url: string | null;
+  telegram_url: string | null;
+
+  /** Активы на входе и сегодня: «с чего начали — к чему пришли». */
+  assets_start: ProjectAssets;
+  assets_now: ProjectAssets;
+
+  created_at: string;
+  updated_at: string;
+};
+
+/**
+ * Задача проекта.
+ *
+ * scope='day' + date=сегодня поднимает задачу в «Задачи дня» на главной:
+ * работа по проекту и есть работа дня, и держать её в отдельном списке
+ * значит гарантированно про неё забыть. Недельная остаётся внутри проекта —
+ * иначе список дня перестаёт быть списком дня.
+ */
+export type ProjectTask = {
+  id: string;
+  user_id: string;
+  project_id: string;
+  text: string;
+  scope: TaskScope;
+  date: string | null;
+  done: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -364,6 +449,7 @@ export type Database = {
       activity_feed: Table<ActivityEntry, 'user_id' | 'type'>;
       daily_tasks: Table<DailyTask, 'user_id' | 'date' | 'text'>;
       projects: Table<Project, 'user_id' | 'expert_name'>;
+      project_tasks: Table<ProjectTask, 'user_id' | 'project_id' | 'text'>;
       weekly_reports: Table<WeeklyReport, 'user_id' | 'week_start'>;
       push_subscriptions: Table<PushSubscriptionRow, 'user_id' | 'endpoint' | 'p256dh' | 'auth'>;
       google_integrations: Table<GoogleIntegrationRow, 'user_id'>;

@@ -92,7 +92,7 @@ export function Heatmap({
         </>
       )}
 
-      <p className="mt-2 text-xs leading-relaxed text-white/25">{t.heatmap.hint}</p>
+      <p className="mt-3 text-xs leading-relaxed text-white/25">{t.heatmap.hint}</p>
     </GlassCard>
   );
 }

@@ -78,7 +78,10 @@ create table if not exists public.outreach_contacts (
   niche          text,
   audience_size  text,
   platform       text,
-  status         text default 'sent',         -- sent|ignored|read|replied|refused|call|closed
+  -- Шкала живёт в lib/types.ts и намеренно без check-констрейнта: статусы
+  -- менялись уже трижды, и каждый раз это была бы миграция на ровном месте.
+  -- Значения старых шкал приводит normalizeStatus() на входе в приложение.
+  status         text default 'sent',
   note           text,
   status_history jsonb default '[]'::jsonb,   -- [{ status, at }]
   created_at     timestamptz default now(),
@@ -97,7 +100,7 @@ create table if not exists public.offers (
   title      text not null,
   niche      text,
   content    text not null,
-  result     text default 'not_sent',         -- not_sent|ignored|read|replied|call|closed
+  result     text default 'not_sent',         -- та же шкала, что у контакта
   note       text,
   contact_id uuid references public.outreach_contacts (id) on delete set null,
   created_at timestamptz default now(),

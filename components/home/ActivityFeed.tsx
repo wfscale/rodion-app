@@ -133,7 +133,7 @@ export function ActivityFeed({ entries }: ActivityFeedProps) {
           type="button"
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
-          className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-xl border-t border-divider pt-2 text-sm font-semibold text-white/40 transition-colors hover:text-white"
+          className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-xl border-t border-divider py-2 text-sm font-semibold text-white/40 transition-colors hover:text-white"
         >
           {expanded ? (
             <>

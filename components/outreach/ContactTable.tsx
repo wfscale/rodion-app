@@ -27,7 +27,7 @@ import { daysBetween, formatShortDate, getLogicalDate } from '@/lib/date';
 import { followUpState, needsTouch } from '@/lib/followup';
 import {
   CONTACT_STATUSES,
-  NEGATIVE_STATUSES,
+  HARSH_STATUSES,
   normalizeStatus,
   type ContactStatus,
   type OutreachContact,
@@ -406,7 +406,7 @@ export function ContactTable({
       case 'status':
         return (
           <StatusCell
-            status={contact.status}
+            status={normalizeStatus(contact.status)}
             onChange={(status) => onStatusChange(contact, status)}
           />
         );
@@ -655,14 +655,18 @@ type RowTint = {
 };
 
 /**
- * Два состояния, которые нужно видеть боковым зрением.
+ * Три состояния, которые нужно видеть боковым зрением.
  *
- * Красный — исход отрицательный, работа с человеком окончена: «Ответил —
- * отказ» и «Заблокировал». Жёлтая полоса — сегодня пора коснуться. Всё
- * остальное остаётся нейтральным: если подсвечивать всё, не видно ничего.
+ * Красный — дверью хлопнули в лицо: «Ответил — отказ» и «Заблокировал».
+ * Голубой — «Удалил чат»: работа тоже окончена, но отказа не было, и красным
+ * такую строку красить значит завышать себе долю резких отказов при беглом
+ * взгляде на список. Жёлтая полоса — сегодня пора коснуться. Всё остальное
+ * остаётся нейтральным: если подсвечивать всё, не видно ничего.
  */
 function rowTint(contact: OutreachContact, today: string): RowTint | null {
-  if (NEGATIVE_STATUSES.includes(normalizeStatus(contact.status))) {
+  const status = normalizeStatus(contact.status);
+
+  if (HARSH_STATUSES.includes(status)) {
     return {
       cell: 'bg-[rgba(255,107,107,0.07)]',
       pinned: 'max-md:bg-[#1B0E0E] max-md:group-hover:bg-[#241313]',
@@ -670,8 +674,18 @@ function rowTint(contact: OutreachContact, today: string): RowTint | null {
     };
   }
 
+  if (status === 'deleted_chat') {
+    // Непрозрачные оттенки для прилипающих колонок — тот же голубой,
+    // сведённый с фоном страницы вручную: прозрачности там быть не может.
+    return {
+      cell: 'bg-[rgba(107,197,255,0.06)]',
+      pinned: 'max-md:bg-[#101519] max-md:group-hover:bg-[#1A1F23]',
+      bar: 'border-l-[#6BC5FF]',
+    };
+  }
+
   const state = followUpState({
-    status: contact.status,
+    status,
     lastTouchAt: contact.last_touch_at,
     touchCount: contact.touch_count ?? 1,
     muted: Boolean(contact.muted),

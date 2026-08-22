@@ -2,24 +2,21 @@
 
 import { Minimize2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useApp } from '@/components/AppProvider';
-import { GlassCard, CardTitle } from '@/components/GlassCard';
 import { BurnTimer } from '@/components/guard/BurnTimer';
 import { ActivityFeed } from '@/components/home/ActivityFeed';
 import { DailyTasks } from '@/components/home/DailyTasks';
 import { HabitsBlock } from '@/components/home/HabitsBlock';
 import { HomeHeader } from '@/components/home/HomeHeader';
 import { MorningCheckin } from '@/components/home/MorningCheckin';
-import { NutritionBlock } from '@/components/home/NutritionBlock';
 import { OutreachCounter } from '@/components/home/OutreachCounter';
 import { QuickAddOutreach } from '@/components/home/QuickAddOutreach';
 import { RoundNudge } from '@/components/home/RoundNudge';
 import { useLanguage } from '@/components/LanguageProvider';
 import type { ContactDraft } from '@/components/outreach/ContactSheet';
 import { SoberMode } from '@/components/sober/SoberMode';
-import { Button, FullPageLoader, useStickyState } from '@/components/ui';
-import { useDebouncedCallback } from '@/hooks/useDebounced';
+import { Button, DeskColumns, FullPageLoader, useStickyState } from '@/components/ui';
 import { formatShortDate } from '@/lib/date';
 import { daysUntilDeadline } from '@/lib/mode';
 import { onceKey, XP } from '@/lib/xp';
@@ -31,22 +28,20 @@ export default function HomePage() {
 
   const [adding, setAdding] = useState(false);
   const [sober, setSober] = useState(false);
-  const [comment, setComment] = useState('');
-  const commentTouched = useRef(false);
 
   // Режим фокуса — перк 14-го уровня. Состояние переживает перезагрузку:
   // включил фокус и закрыл приложение — вернёшься в фокус.
   const [focus, setFocus] = useStickyState('rodion.home.focus', false);
 
+  /*
+   * Дневные задачи проектов правят на странице проекта, а провайдер живёт
+   * в общем макете и сам по себе не перезагружается. Без этого возврат на
+   * главную показывал бы вчерашний список.
+   */
+  const { reloadProjectTasks } = app;
   useEffect(() => {
-    if (commentTouched.current) return;
-    setComment(app.todayLog?.day_comment ?? '');
-  }, [app.todayLog?.day_comment]);
-
-  const saveComment = useDebouncedCallback(
-    (text: string) => app.saveDay({ day_comment: text }),
-    500,
-  );
+    void reloadProjectTasks();
+  }, [reloadProjectTasks]);
 
   if (app.loading || !app.profile) return <FullPageLoader />;
 
@@ -85,113 +80,109 @@ export default function HomePage() {
         />
       )}
 
-      {/* Счётчик рассылок — главный элемент экрана, всё остальное фон. */}
-      <OutreachCounter
-        sent={app.quota.sent}
-        quota={app.quota.quota}
-        record={app.quota.record}
-        daysToGrow={app.quota.daysToGrow}
-        nextQuota={app.quota.next}
-        showOverdrive={app.can('overdrive')}
-        paused={app.guard.today === 'pause'}
-      />
-
       {/*
-        Сколько времени у дня осталось. Стоит сразу под счётчиком и исчезает,
-        как только квота закрыта: подгонять человека, который своё сделал,
-        нечем — а строка, которая висит всегда, перестаёт читаться вообще.
+        Две колонки на мониторе: слева всё, чем работают руками, справа фон
+        дня. В одну колонку главная уезжала на два экрана вниз при том, что
+        физически помещается целиком.
+
+        В режиме фокуса правая колонка пуста — в этом и смысл фокуса, — и
+        левая растягивается на всю ширину сама: пустой колонки в сетке нет.
       */}
-      <BurnTimer
-        guard={app.guard}
-        sent={app.quota.sent}
-        quota={app.quota.quota}
-        streak={profile.quota_streak ?? 0}
-        onArm={() => void app.armShield()}
+      <DeskColumns
+        main={
+          <>
+            {/* Счётчик рассылок — главный элемент экрана, всё остальное фон. */}
+            <OutreachCounter
+              sent={app.quota.sent}
+              quota={app.quota.quota}
+              record={app.quota.record}
+              daysToGrow={app.quota.daysToGrow}
+              nextQuota={app.quota.next}
+              showOverdrive={app.can('overdrive')}
+              paused={app.guard.today === 'pause'}
+            />
+
+            {/*
+              Сколько времени у дня осталось. Стоит сразу под счётчиком и
+              исчезает, как только квота закрыта: подгонять человека, который
+              своё сделал, нечем — а строка, которая висит всегда, перестаёт
+              читаться вообще.
+            */}
+            <BurnTimer
+              guard={app.guard}
+              sent={app.quota.sent}
+              quota={app.quota.quota}
+              streak={profile.quota_streak ?? 0}
+              onArm={() => void app.armShield()}
+            />
+
+            {/* Ровное число — единственная цель, которая никогда не кончается.
+                На привале молчит: пока квота не закрыта, надж говорит именно
+                про неё, а это ровно то давление, ради снятия которого привал
+                и существует. */}
+            {!(app.guard.today === 'pause' && !app.quota.closed) && (
+              <RoundNudge
+                sentToday={app.quota.sent}
+                quota={app.quota.quota}
+                total={app.sentTotal}
+              />
+            )}
+
+            <QuickAddOutreach today={app.today} onAdd={handleQuickAdd} busy={adding} />
+
+            {focusOn && (
+              <Button variant="ghost" full onClick={() => setFocus(false)}>
+                <Minimize2 size={16} />
+                {t.focus.off}
+              </Button>
+            )}
+          </>
+        }
+        side={
+          focusOn ? null : (
+            <>
+              {/* Компонент рисует свою карточку сам: вложенный backdrop-filter
+                  в Safari на iOS схлопывается в белый прямоугольник. */}
+              <ActivityFeed entries={app.activity} />
+
+              {/* Задачи дня и дневные задачи проектов приходят одним списком:
+                  работа по проекту и есть работа дня. */}
+              <DailyTasks
+                tasks={app.homeTasks}
+                onAdd={(text) => void app.addTask(text)}
+                onToggle={(task) => void app.toggleHomeTask(task)}
+                onDelete={(task) => void app.deleteTask(task.id)}
+              />
+
+              <MorningCheckin
+                log={app.todayLog ?? ({ date: app.today } as never)}
+                done={checkinDone}
+                delay={3}
+                onSave={async (input) => {
+                  await app.saveDay(input);
+                  await app.awardXp(XP.CHECKIN, 'checkin', onceKey.checkin(app.today));
+                }}
+              />
+
+              <HabitsBlock
+                done={app.todayLog?.checklist ?? {}}
+                onToggle={(id) => void app.toggleHabit(id)}
+              />
+
+              {/* Трезвый режим — экстренная кнопка, должна быть под рукой. */}
+              <Button variant="ghost" full onClick={() => setSober(true)}>
+                {t.home.soberMode}
+              </Button>
+
+              {canFocus && (
+                <Button variant="ghost" full onClick={() => setFocus(true)}>
+                  {t.focus.on}
+                </Button>
+              )}
+            </>
+          )
+        }
       />
-
-      {/* Ровное число — единственная цель, которая никогда не кончается.
-          На привале молчит: пока квота не закрыта, надж говорит именно про
-          неё, а это ровно то давление, ради снятия которого привал и есть. */}
-      {!(app.guard.today === 'pause' && !app.quota.closed) && (
-        <RoundNudge sentToday={app.quota.sent} quota={app.quota.quota} total={app.sentTotal} />
-      )}
-
-      <QuickAddOutreach today={app.today} onAdd={handleQuickAdd} busy={adding} />
-
-      {focusOn ? (
-        <Button variant="ghost" full onClick={() => setFocus(false)}>
-          <Minimize2 size={16} />
-          {t.focus.off}
-        </Button>
-      ) : (
-        <>
-          {/* Компонент рисует свою карточку сам: вложенный backdrop-filter
-              в Safari на iOS схлопывается в непрозрачный белый прямоугольник. */}
-          <ActivityFeed entries={app.activity} />
-
-          <DailyTasks
-            tasks={app.tasks}
-            onAdd={(text) => void app.addTask(text)}
-            onToggle={(id) => void app.toggleTask(id)}
-            onDelete={(id) => void app.deleteTask(id)}
-          />
-
-          {/* Трезвый режим — экстренная кнопка, должна быть под рукой. */}
-          <Button variant="ghost" full onClick={() => setSober(true)}>
-            {t.home.soberMode}
-          </Button>
-
-          {canFocus && (
-            <Button variant="ghost" full onClick={() => setFocus(true)}>
-              {t.focus.on}
-            </Button>
-          )}
-
-          <MorningCheckin
-            log={app.todayLog ?? ({ date: app.today } as never)}
-            done={checkinDone}
-            delay={3}
-            onSave={async (input) => {
-              await app.saveDay(input);
-              await app.awardXp(XP.CHECKIN, 'checkin', onceKey.checkin(app.today));
-            }}
-          />
-
-          <HabitsBlock
-            done={app.todayLog?.checklist ?? {}}
-            onToggle={(id) => void app.toggleHabit(id)}
-          />
-
-          <GlassCard delay={4}>
-            <NutritionBlock
-              log={app.todayLog ?? ({ date: app.today } as never)}
-              onSaveMeals={(input) => app.saveDay(input)}
-              onToggleFasting={async () => {
-                const next = !app.todayLog?.fasting_ok;
-                await app.saveDay({ fasting_ok: next });
-                if (next) await app.awardXp(XP.HABIT, 'habit', `habit:${app.today}:fasting`);
-              }}
-            />
-          </GlassCard>
-
-          <GlassCard delay={5}>
-            <CardTitle right={<span className="text-xs text-white/25">{t.home.autosaved}</span>}>
-              {t.home.notesTitle}
-            </CardTitle>
-            <textarea
-              rows={3}
-              value={comment}
-              onChange={(e) => {
-                commentTouched.current = true;
-                setComment(e.target.value);
-                saveComment(e.target.value);
-              }}
-              placeholder={t.home.notesPh}
-              className="field"
-            />
-          </GlassCard>
-        </>
-      )}
 
       <SoberMode
         open={sober}

@@ -15,7 +15,7 @@ import { HallOfFame, MentorCard, WeekCompare } from '@/components/progress/Insig
 import { LevelLadder } from '@/components/progress/LevelLadder';
 import { WeeklyReportView } from '@/components/report/WeeklyReportView';
 import { ScaleDashboard } from '@/components/scale/ScaleDashboard';
-import { Button, FullPageLoader, PageTitle, Segmented } from '@/components/ui';
+import { Button, DeskColumns, FullPageLoader, PageTitle, Segmented } from '@/components/ui';
 import { XpBar } from '@/components/XpBar';
 import { getLogicalDate, shiftDate } from '@/lib/date';
 import { dailySeries, funnelTotals, overdueTouchCount, spanDays, xpSeries } from '@/lib/insights';
@@ -154,187 +154,202 @@ export default function ProgressPage() {
     <div className="space-y-4">
       <PageTitle>{t.progress.title}</PageTitle>
 
-      {/* Уровень: текущий и тизер следующего. Полная лестница — ниже,
-          и в ней всё равно видно только текущий блок из пяти ступеней. */}
-      <GlassCard>
-        <CardTitle right={<span className="text-sm font-bold">{profile.total_xp} XP</span>}>
-          {t.progress.levelTitle} {level}
-        </CardTitle>
+      {/*
+        Две колонки на мониторе: слева шкала и график — то, ради чего на
+        страницу заходят, справа всё остальное. В одну колонку прогресс
+        уезжал на три экрана вниз, и до тепловой карты никто не долистывал.
+      */}
+      <DeskColumns
+        main={
+          <>
+          {/* Уровень: текущий и тизер следующего. Полная лестница — ниже,
+              и в ней всё равно видно только текущий блок из трёх ступеней. */}
+          <GlassCard>
+            <CardTitle right={<span className="text-sm font-bold">{profile.total_xp} XP</span>}>
+              {t.progress.levelTitle} {level}
+            </CardTitle>
 
-        <p className="mb-3 text-2xl font-extrabold tracking-tight">{app.levelInfo.name}</p>
-        <XpBar pct={app.levelInfo.progressPct} />
+            <p className="mb-3 text-2xl font-extrabold tracking-tight">{app.levelInfo.name}</p>
+            <XpBar pct={app.levelInfo.progressPct} />
 
-        <p className="mt-2 text-sm text-muted">
-          {app.levelInfo.isMax
-            ? t.progress.unknownAhead
-            : `${t.progress.toNext}: ${app.levelInfo.xpToNext} XP`}
-        </p>
+            <p className="mt-2 text-sm text-muted">
+              {app.levelInfo.isMax
+                ? t.progress.unknownAhead
+                : `${t.progress.toNext}: ${app.levelInfo.xpToNext} XP`}
+            </p>
 
-        {!app.levelInfo.isMax && (
-          <p className="mt-3 border-t border-divider pt-3 text-sm">
-            {teaser ? (
-              <>
-                <span className="text-white/45">{tf(t.progress.nextTeaser, { name: '' })}</span>{' '}
-                <span className="font-bold">{t.features[teaser]}</span>
-                <span className="block text-white/40">{t.features[`${teaser}Desc` as const]}</span>
-              </>
-            ) : (
-              <span className="text-white/45">{t.progress.unknownAhead}</span>
+            {!app.levelInfo.isMax && (
+              <p className="mt-3 border-t border-divider pt-3 text-sm">
+                {teaser ? (
+                  <>
+                    <span className="text-white/45">{tf(t.progress.nextTeaser, { name: '' })}</span>{' '}
+                    <span className="font-bold">{t.features[teaser]}</span>
+                    <span className="block text-white/40">{t.features[`${teaser}Desc` as const]}</span>
+                  </>
+                ) : (
+                  <span className="text-white/45">{t.progress.unknownAhead}</span>
+                )}
+              </p>
             )}
-          </p>
-        )}
-      </GlassCard>
+          </GlassCard>
 
-      {/* Квота */}
-      <GlassCard delay={1}>
-        <CardTitle>{t.progress.quotaTitle}</CardTitle>
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            { value: app.quota.quota, label: t.home.quotaCurrent },
-            { value: app.quota.streak, label: t.progress.streakTitle },
-            { value: app.quota.record, label: t.home.record },
-          ].map((cell) => (
-            <div key={cell.label} className="rounded-2xl bg-white/[0.04] px-2 py-3 text-center">
-              <p className="text-xl font-extrabold">{cell.value}</p>
-              <p className="mt-0.5 text-[11px] leading-tight text-white/40">{cell.label}</p>
+          {/* Квота */}
+          <GlassCard delay={1}>
+            <CardTitle>{t.progress.quotaTitle}</CardTitle>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { value: app.quota.quota, label: t.home.quotaCurrent },
+                { value: app.quota.streak, label: t.progress.streakTitle },
+                { value: app.quota.record, label: t.home.record },
+              ].map((cell) => (
+                <div key={cell.label} className="rounded-2xl bg-white/[0.04] px-2 py-3 text-center">
+                  <p className="text-xl font-extrabold tabular-nums">{cell.value}</p>
+                  <p className="mt-0.5 text-[11px] leading-tight text-white/40">{cell.label}</p>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        {/* Запас щитов — здесь только число: рычаги живут на странице
-            рассылок, а прогресс существует, чтобы смотреть, а не жать. */}
-        {app.guard.ready && (
-          <p className="mt-3 flex items-center justify-between gap-3 border-t border-divider pt-3 text-sm">
-            <span className="text-white/40">{t.guard.charges}</span>
-            <span className="truncate text-right">
-              <b className="font-extrabold tabular-nums">
-                {app.guard.charges} / {SHIELD_MAX}
-              </b>
-              <span className="ml-2 text-white/35">
-                {app.guard.regenIn === 0
-                  ? t.guard.regenFull
-                  : tf(t.guard.regenShort, { n: app.guard.regenIn, unit: days(app.guard.regenIn) })}
-              </span>
-            </span>
-          </p>
-        )}
-      </GlassCard>
+            {/* Запас щитов — здесь только число: рычаги живут на странице
+                рассылок, а прогресс существует, чтобы смотреть, а не жать. */}
+            {app.guard.ready && (
+              <p className="mt-3 flex items-center justify-between gap-3 border-t border-divider pt-3 text-sm">
+                <span className="text-white/40">{t.guard.charges}</span>
+                <span className="truncate text-right">
+                  <b className="font-extrabold tabular-nums">
+                    {app.guard.charges} / {SHIELD_MAX}
+                  </b>
+                  <span className="ml-2 text-white/35">
+                    {app.guard.regenIn === 0
+                      ? t.guard.regenFull
+                      : tf(t.guard.regenShort, { n: app.guard.regenIn, unit: days(app.guard.regenIn) })}
+                  </span>
+                </span>
+              </p>
+            )}
+          </GlassCard>
 
-      {/* График: метрика и окно переключаются, высота шкалы — никогда. */}
-      <GlassCard delay={2}>
-        <CardTitle>{t.progress.chartTitle}</CardTitle>
+          {/* График: метрика и окно переключаются, высота шкалы — никогда. */}
+          <GlassCard delay={2}>
+            <CardTitle>{t.progress.chartTitle}</CardTitle>
 
-        <div className="mb-3 space-y-2">
-          <Segmented<Metric>
-            value={metric}
-            onChange={setMetric}
-            options={[
-              { value: 'sent', label: t.progress.chartSent },
-              { value: 'xp', label: t.progress.chartXp },
-            ]}
-          />
-          <Segmented<string>
-            value={String(range)}
-            onChange={(value) => setRange(value === 'all' ? 'all' : (Number(value) as Range))}
-            options={[
-              { value: '7', label: t.progress.range7 },
-              { value: '14', label: t.progress.range14 },
-              { value: '30', label: t.progress.range30 },
-              { value: '90', label: t.progress.range90 },
-              { value: 'all', label: t.progress.rangeAll },
-            ]}
-          />
-        </div>
+            <div className="mb-3 space-y-2">
+              <Segmented<Metric>
+                value={metric}
+                onChange={setMetric}
+                options={[
+                  { value: 'sent', label: t.progress.chartSent },
+                  { value: 'xp', label: t.progress.chartXp },
+                ]}
+              />
+              <Segmented<string>
+                value={String(range)}
+                onChange={(value) => setRange(value === 'all' ? 'all' : (Number(value) as Range))}
+                options={[
+                  { value: '7', label: t.progress.range7 },
+                  { value: '14', label: t.progress.range14 },
+                  { value: '30', label: t.progress.range30 },
+                  { value: '90', label: t.progress.range90 },
+                  { value: 'all', label: t.progress.rangeAll },
+                ]}
+              />
+            </div>
 
-        {hasChartData ? (
-          <GrowthChart
-            data={chartData}
-            unit={metric === 'sent' ? t.progress.chartSent : t.common.xp}
-          />
-        ) : (
-          <p className="py-6 text-center text-sm text-muted">{t.progress.chartEmpty}</p>
-        )}
-      </GlassCard>
+            {hasChartData ? (
+              <GrowthChart
+                data={chartData}
+                unit={metric === 'sent' ? t.progress.chartSent : t.common.xp}
+              />
+            ) : (
+              <p className="py-6 text-center text-sm text-muted">{t.progress.chartEmpty}</p>
+            )}
+          </GlassCard>
 
-      {/* Лестница уровней */}
-      <LevelLadder level={level} />
+          {/* Лестница уровней */}
+          <LevelLadder level={level} />
 
-      {/* Режим */}
-      <ModeBlock counters={counters} />
+          </>
+        }
+        side={
+          <>
+          {/* Режим */}
+          <ModeBlock counters={counters} />
 
-      {checkinDue && (
-        <Button variant="ghost" full onClick={() => setCheckinOpen(true)}>
-          {t.mode.checkinTitle}
-        </Button>
-      )}
+          {checkinDue && (
+            <Button variant="ghost" full onClick={() => setCheckinOpen(true)}>
+              {t.mode.checkinTitle}
+            </Button>
+          )}
 
-      {/* Тепловая карта — 8-й уровень, разворачивается до года на 19-м. */}
-      {app.can('heatmap') && (
-        <Heatmap contacts={app.contacts} today={app.today} weeks={app.can('annual') ? 52 : 12} />
-      )}
+          {/* Тепловая карта — 8-й уровень, разворачивается до года на 19-м. */}
+          {app.can('heatmap') && (
+            <Heatmap contacts={app.contacts} today={app.today} weeks={app.can('annual') ? 52 : 12} />
+          )}
 
-      {/* Витрина достижений — 10-й уровень. */}
-      {app.can('achievements') && (
-        <AchievementsCard
-          input={{
-            sent: funnel.sent,
-            replied: funnel.replied,
-            calls: funnel.calls,
-            closed: funnel.closed,
-            chain: app.chain,
-            record: app.quota.record,
-            quotaStreak: app.quota.streak,
-          }}
-        />
-      )}
+          {/* Витрина достижений — 10-й уровень. */}
+          {app.can('achievements') && (
+            <AchievementsCard
+              input={{
+                sent: funnel.sent,
+                replied: funnel.replied,
+                calls: funnel.calls,
+                closed: funnel.closed,
+                chain: app.chain,
+                record: app.quota.record,
+                quotaStreak: app.quota.streak,
+              }}
+            />
+          )}
 
-      {/* Динамика недель — 12-й уровень. */}
-      {app.can('compare') && <WeekCompare contacts={app.contacts} today={app.today} />}
+          {/* Динамика недель — 12-й уровень. */}
+          {app.can('compare') && <WeekCompare contacts={app.contacts} today={app.today} />}
 
-      {/* Личный разбор — 15-й уровень. */}
-      {app.can('mentor') && (
-        <MentorCard
-          numbers={{
-            ...funnel,
-            overdueTouches: overdueTouchCount(app.contacts, app.today),
-          }}
-        />
-      )}
+          {/* Личный разбор — 15-й уровень. */}
+          {app.can('mentor') && (
+            <MentorCard
+              numbers={{
+                ...funnel,
+                overdueTouches: overdueTouchCount(app.contacts, app.today),
+              }}
+            />
+          )}
 
-      {/* Зал славы — 16-й уровень. */}
-      {app.can('hall') && <HallOfFame contacts={app.contacts} />}
+          {/* Зал славы — 16-й уровень. */}
+          {app.can('hall') && <HallOfFame contacts={app.contacts} />}
 
-      {/* Акценты интерфейса — 17-й уровень. */}
-      {app.can('themes') && <AccentPicker />}
+          {/* Акценты интерфейса — 17-й уровень. */}
+          {app.can('themes') && <AccentPicker />}
 
-      {/* Еженедельный отчёт — 6-й уровень */}
-      {app.can('report') ? (
-        <WeeklyReportView reports={reports} />
-      ) : (
-        <LockedFeature featureKey="report" requiredLevel={FEATURE_LEVEL.report} />
-      )}
+          {/* Еженедельный отчёт — 6-й уровень */}
+          {app.can('report') ? (
+            <WeeklyReportView reports={reports} />
+          ) : (
+            <LockedFeature featureKey="report" requiredLevel={FEATURE_LEVEL.report} />
+          )}
 
-      {/* Дашборд масштаба — 7-й уровень */}
-      {app.can('scale') ? (
-        <ScaleDashboard
-          sentTotal={app.contacts.length}
-          closedTotal={funnel.closed}
-          daysActive={daysActive}
-          avgDeal={profile.avg_deal_amount ?? 0}
-          onAvgDealChange={(value) => void app.updateProfile({ avg_deal_amount: value })}
-        />
-      ) : (
-        <LockedFeature featureKey="scale" requiredLevel={FEATURE_LEVEL.scale} />
-      )}
+          {/* Дашборд масштаба — 7-й уровень */}
+          {app.can('scale') ? (
+            <ScaleDashboard
+              sentTotal={app.contacts.length}
+              closedTotal={funnel.closed}
+              daysActive={daysActive}
+              avgDeal={profile.avg_deal_amount ?? 0}
+              onAvgDealChange={(value) => void app.updateProfile({ avg_deal_amount: value })}
+            />
+          ) : (
+            <LockedFeature featureKey="scale" requiredLevel={FEATURE_LEVEL.scale} />
+          )}
 
-      {/* Апекс — 20-й уровень. Закрытого больше нет, и это стоит сказать. */}
-      {app.can('apex') && (
-        <GlassCard delay={8}>
-          <CardTitle>{t.features.apex}</CardTitle>
-          <p className="text-base font-bold leading-snug">{t.features.apexUnlock}</p>
-          <p className="mt-2 text-sm leading-relaxed text-muted">{t.features.apexDesc}</p>
-        </GlassCard>
-      )}
+          {/* Апекс — 20-й уровень. Закрытого больше нет, и это стоит сказать. */}
+          {app.can('apex') && (
+            <GlassCard delay={8}>
+              <CardTitle>{t.features.apex}</CardTitle>
+              <p className="text-base font-bold leading-snug">{t.features.apexUnlock}</p>
+              <p className="mt-2 text-sm leading-relaxed text-muted">{t.features.apexDesc}</p>
+            </GlassCard>
+          )}
+          </>
+        }
+      />
 
       <EveningCheckin
         open={checkinOpen}

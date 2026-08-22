@@ -5,11 +5,11 @@ import { BellOff, BellRing, Check, ExternalLink } from 'lucide-react';
 import { useMemo } from 'react';
 import { CardTitle, GlassCard } from '@/components/GlassCard';
 import { useLanguage } from '@/components/LanguageProvider';
-import { statusTone, telegramUrl } from '@/components/outreach/ContactSheet';
+import { telegramUrl } from '@/components/outreach/ContactSheet';
 import { Badge, EmptyState } from '@/components/ui';
 import { compareUrgency, followUpState, urgencyColor, type FollowUpState } from '@/lib/followup';
 import { isActive, reminderTime, urgencyOf } from '@/lib/reminders';
-import type { OutreachContact, Reminder } from '@/lib/types';
+import { normalizeStatus, type OutreachContact, type Reminder } from '@/lib/types';
 
 type Row = {
   contact: OutreachContact;
@@ -171,16 +171,27 @@ export function FollowUpList({
                     </p>
                   )}
 
+                  {/*
+                    Три кнопки в ряд на 375px не помещаются: раньше третья
+                    просто уезжала за край карточки (у flex-детей min-width
+                    по умолчанию auto, ужиматься они отказываются).
+
+                    Поэтому «Открыть» на телефоне — иконка без подписи:
+                    стрелка наружу читается однозначно, а главное действие
+                    строки одно, и это «Коснулся». Подпись возвращается на
+                    экранах, где для неё есть место.
+                  */}
                   <div className="mt-3 flex items-center gap-2">
                     {link && (
                       <a
                         href={link}
                         target="_blank"
                         rel="noreferrer"
-                        className="btn-ghost min-h-[44px] flex-1 text-sm font-semibold"
+                        aria-label={t.common.open}
+                        className="btn-ghost min-h-[44px] w-12 shrink-0 px-0 text-sm font-semibold sm:w-auto sm:flex-1 sm:px-4"
                       >
-                        <ExternalLink size={15} />
-                        {t.common.open}
+                        <ExternalLink size={15} className="shrink-0" />
+                        <span className="hidden sm:inline">{t.common.open}</span>
                       </a>
                     )}
 
@@ -192,10 +203,10 @@ export function FollowUpList({
                         // с касанием, иначе оно висит до конца дня без смысла.
                         if (reminder) onCompleteReminder(reminder.id);
                       }}
-                      className="btn-primary min-h-[44px] flex-1 text-sm"
+                      className="btn-primary min-h-[44px] min-w-0 flex-1 px-3 text-sm"
                     >
-                      <Check size={15} />
-                      {t.followup.touch}
+                      <Check size={15} className="shrink-0" />
+                      <span className="truncate">{t.followup.touch}</span>
                     </button>
 
                     <button
@@ -208,8 +219,9 @@ export function FollowUpList({
                     </button>
                   </div>
 
-                  <span className="sr-only">{t.statuses[contact.status]}</span>
-                  <span className="sr-only">{statusTone(contact.status)}</span>
+                  {/* Статус виден глазом по цвету полосы — скринридеру его
+                      нужно назвать словом. */}
+                  <span className="sr-only">{t.statuses[normalizeStatus(contact.status)]}</span>
                 </motion.div>
               );
             })}

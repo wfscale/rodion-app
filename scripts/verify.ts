@@ -39,6 +39,7 @@ import {
 import {
   OFFER_RESULTS,
   CONTACT_STATUSES,
+  HARSH_STATUSES,
   NEGATIVE_STATUSES,
   normalizeStatus,
   SENT_STATUSES,
@@ -47,17 +48,6 @@ import {
 import type { OutreachContact } from '@/lib/types';
 import { isRound, milestonesCrossed, milestoneWeight, pickNudge, roundTarget } from '@/lib/round';
 import { ACCENT_KEYS } from '@/lib/accent';
-import {
-  BLUEPRINT_ORDER,
-  buildBlueprint,
-  compareCombos,
-  compareLengths,
-  comparePatterns,
-  isReplied,
-  patternsOf,
-  PATTERN_IDS,
-  summarize,
-} from '@/lib/offer-patterns';
 import {
   assignRoles,
   authorsOf,
@@ -109,6 +99,7 @@ import {
   formatTimeLeft,
   getLogicalDate,
   minutesUntilDayEnd,
+  shiftDate,
   weekDates,
 } from '@/lib/date';
 import {
@@ -126,6 +117,20 @@ import {
   type GuardState,
   type RollGuardInput,
 } from '@/lib/shield';
+import {
+  currentStage,
+  daysToDeadline,
+  defaultStages,
+  dueState,
+  GATE_ID,
+  isPipelineId,
+  isPotential,
+  PIPELINE_IDS,
+  spreadDues,
+  stageProgress,
+} from '@/lib/pipeline';
+import { forecast, FORECAST_MIN_SENT, reachedAt, type ForecastContact } from '@/lib/forecast';
+import { assetsOf, externalHref, formatNumber, hasAssets, stagesOf } from '@/lib/project';
 import { ru } from '@/lib/i18n/ru';
 import { en } from '@/lib/i18n/en';
 
@@ -538,7 +543,7 @@ check('у отказа свой тост', onStatusChanged({ contactId: 'c8', st
   .find((e) => e.kind === 'toast' && e.textKey === 'repliedNo') !== undefined, true);
 
 section('Статуса «Отказ» больше нет');
-check('в шкале восемь статусов', CONTACT_STATUSES.length, 8);
+check('в шкале девять статусов', CONTACT_STATUSES.length, 9);
 check('«Отказ» убран', (CONTACT_STATUSES as readonly string[]).includes('refused'), false);
 check('старый «Отказ» превращается в «Ответил — отказ»', normalizeStatus('refused'), 'replied_no');
 check('старый ignored тоже', normalizeStatus('ignored'), 'replied_no');
@@ -704,148 +709,6 @@ check(
   ['2026-07-27'],
 );
 
-
-/* -------------------------------------------------------------------------- */
-section('Разбор паттернов офферов');
-
-const sample = (content: string, result: string) => ({ content, result });
-
-check('личное наблюдение распознаётся', patternsOf('Посмотрел твой блог').includes('personal'), true);
-check('приветствие распознаётся', patternsOf('Привет! Как дела').includes('greeting'), true);
-check('приветствие только в начале', patternsOf('Хочу сказать привет').includes('greeting'), false);
-check('вопрос распознаётся', patternsOf('Интересно?').includes('question'), true);
-check('цифры распознаются', patternsOf('Поднял выручку на 40%').includes('numbers'), true);
-check('короткий текст', patternsOf('Коротко и по делу').includes('short'), true);
-check('длинный текст не короткий', patternsOf('а'.repeat(1000)).includes('short'), false);
-check('длинный текст помечается длинным', patternsOf('а'.repeat(1000)).includes('long'), true);
-check('абзацы распознаются', patternsOf('Первый\n\nВторой').includes('structured'), true);
-check('пустой текст не даёт признаков', patternsOf('').length, 0);
-
-check('ответ засчитывается', isReplied('replied'), true);
-check('отказ тоже засчитывается как ответ', isReplied('replied_no'), true);
-check('старый «Отказ» тоже', isReplied('refused'), true);
-check('молчание не засчитывается', isReplied('sent'), false);
-
-const patternRows = comparePatterns([
-  sample('Привет! Посмотрел твой блог, зацепило. Могу помочь?', 'replied'),
-  sample('Привет! Посмотрел последний запуск, сильно. Давай обсудим?', 'replied_no'),
-  sample('Привет! Смотрел твои сторис, круто. Интересно?', 'call'),
-  sample('Предлагаю сотрудничество', 'sent'),
-  sample('Предлагаю сотрудничество на выгодных условиях', 'sent'),
-  sample('Здравствуйте, предлагаю услуги продюсера', 'sent'),
-]);
-
-const personalRow = patternRows.find((row) => row.id === 'personal');
-check('личное наблюдение сработало на всех троих', personalRow?.withCount, 3);
-check('и все трое ответили', personalRow?.withRate, 100);
-check('без него не ответил никто', personalRow?.withoutRate, 0);
-check('разница максимальная', personalRow?.lift, 100);
-check('выборка достаточна', personalRow?.reliable, true);
-check('самый сильный признак идёт первым', patternRows[0]?.reliable, true);
-
-check('признак без единого вхождения выпадает', comparePatterns([sample('текст', 'sent')]).find((r) => r.id === 'emoji'), undefined);
-check('на пустом входе таблицы нет', comparePatterns([]).length, 0);
-
-const lengthRows = compareLengths([
-  sample('коротко', 'replied'),
-  sample('а'.repeat(1200), 'sent'),
-]);
-check('длина разбивается на корзины', lengthRows.length, 2);
-check('короткие ответили на 100%', lengthRows.find((r) => r.bucket === 'short')?.rate, 100);
-
-const patternSummary = summarize(
-  [sample('Посмотрел твой блог', 'replied'), sample('текст', 'sent')],
-  patternRows,
-);
-check('сводка считает долю ответов', patternSummary.rate, 50);
-
-/* -------------------------------------------------------------------------- */
-section('Связки признаков');
-
-const comboRows = compareCombos([
-  sample('Привет! Посмотрел твой блог, зацепило. Могу помочь?', 'replied'),
-  sample('Привет! Смотрел последний запуск, сильно. Давай обсудим?', 'call'),
-  sample('Привет! Смотрел твои сторис, круто. Интересно?', 'replied_no'),
-  sample('Предлагаю сотрудничество', 'sent'),
-  sample('Предлагаю услуги продюсера', 'sent'),
-  sample('Здравствуйте, предлагаю сотрудничество', 'sent'),
-]);
-
-const personalQuestion = comboRows.find(
-  (row) =>
-    (row.a === 'personal' && row.b === 'question') ||
-    (row.a === 'question' && row.b === 'personal'),
-);
-check('связка «личное + вопрос» найдена', Boolean(personalQuestion), true);
-check('встретилась трижды', personalQuestion?.count, 3);
-check('и все три ответили', personalQuestion?.rate, 100);
-check('связка сильнее общей доли', (personalQuestion?.lift ?? 0) > 0, true);
-check('выборка достаточна', personalQuestion?.reliable, true);
-check('связки отсортированы по силе', comboRows[0]?.reliable, true);
-check('на пустом входе связок нет', compareCombos([]).length, 0);
-check('лимит соблюдается', compareCombos(
-  [
-    sample('Привет! Посмотрел твой блог 40%, зацепило честно. Могу помочь?\n\nДа', 'replied'),
-    sample('Привет! Смотрел запуск 30%, сильно по факту. Давай обсудим?\n\nОк', 'call'),
-  ],
-  3,
-).length <= 3, true);
-
-// Взаимоисключающие концы одной шкалы не должны попадать в пары.
-check(
-  'короткий и длинный вместе не считаются',
-  compareCombos([sample('коротко', 'replied'), sample('а'.repeat(1200), 'sent')]).some(
-    (row) =>
-      (row.a === 'short' && row.b === 'long') || (row.a === 'long' && row.b === 'short'),
-  ),
-  false,
-);
-
-/* -------------------------------------------------------------------------- */
-section('Каркас оффера');
-
-const blueprint = buildBlueprint([
-  sample('Привет! Посмотрел твой блог, зацепило. Могу помочь?', 'replied'),
-  sample('Привет! Смотрел последний запуск, сильно. Давай обсудим?', 'call'),
-  sample('Привет! Смотрел твои сторис, круто. Интересно?', 'replied_no'),
-  sample('Предлагаю сотрудничество', 'sent'),
-  sample('Предлагаю услуги продюсера', 'sent'),
-  sample('Здравствуйте, предлагаю сотрудничество', 'sent'),
-  // Длинный текст нужен, чтобы длине было с чем сравниваться: на одной
-  // корзине вывод «пиши коротко» ничем не подкреплён.
-  sample('а'.repeat(1200), 'sent'),
-]);
-
-check('в каркасе все блоки порядка', blueprint.steps.length, BLUEPRINT_ORDER.length);
-check('порядок блоков сохраняется', blueprint.steps[0]?.id, BLUEPRINT_ORDER[0]);
-check(
-  'личное наблюдение попадает в «оставить»',
-  blueprint.steps.find((step) => step.id === 'personal')?.action,
-  'keep',
-);
-check(
-  'блок без данных помечается «проверить»',
-  blueprint.steps.find((step) => step.id === 'emoji')?.action,
-  'test',
-);
-check('есть что проверить следующим', Boolean(blueprint.experiment), true);
-check('целевая длина выбрана', blueprint.length, 'short');
-check('доверие в границах 0..100', blueprint.confidence >= 0 && blueprint.confidence <= 100, true);
-
-const emptyBlueprint = buildBlueprint([]);
-check('пустой вход — все блоки «проверить»', emptyBlueprint.steps.every((s) => s.action === 'test'), true);
-check('и доверия ноль', emptyBlueprint.confidence, 0);
-check('и длины нет', emptyBlueprint.length, null);
-check(
-  'каждому блоку каркаса есть подпись (ru)',
-  BLUEPRINT_ORDER.filter((id) => !ru.blueprint.lines[id]),
-  [],
-);
-check(
-  'каждому блоку каркаса есть подпись (en)',
-  BLUEPRINT_ORDER.filter((id) => !en.blueprint.lines[id]),
-  [],
-);
 
 /* -------------------------------------------------------------------------- */
 section('Переписка');
@@ -1339,6 +1202,174 @@ check('запас щитов не превышает трёх', full.guard.charg
 check('при полном запасе прогресс не копится', full.guard.progress, 0);
 
 /* -------------------------------------------------------------------------- */
+section('Статус «Удалил чат»');
+
+check('удаление чата — отдельный исход', CONTACT_STATUSES.includes('deleted_chat'), true);
+check('старое значение deleted приводится', normalizeStatus('deleted'), 'deleted_chat');
+check('старое значение chat_deleted приводится', normalizeStatus('chat_deleted'), 'deleted_chat');
+check('письмо всё-таки ушло', SENT_STATUSES.includes('deleted_chat'), true);
+check('ответом это не считается', REPLIED_STATUSES.includes('deleted_chat'), false);
+check('работа с человеком окончена', NEGATIVE_STATUSES.includes('deleted_chat'), true);
+// Дверь не захлопнули, её тихо закрыли: красным это красить нельзя, иначе
+// доля резких отказов завышается и выводы про офферы едут.
+check('но красным не красится', HARSH_STATUSES.includes('deleted_chat'), false);
+check('резкие исходы остались прежними', HARSH_STATUSES, ['replied_no', 'blocked']);
+check('касаний больше не предлагаем', intervalFor('deleted_chat', 1), null);
+check(
+  'в приоритет не попадает',
+  primeScore(
+    { status: 'deleted_chat', last_touch_at: '2026-08-01', touch_count: 1, muted: false } as never,
+    '2026-08-21',
+  ),
+  0,
+);
+
+/* -------------------------------------------------------------------------- */
+section('Воронка продюсирования');
+
+const stages = () => defaultStages(ru);
+
+check('в каркасе семь этапов', stages().length, 7);
+check('порядок этапов зафиксирован', stages().map((s) => s.id), [...PIPELINE_IDS]);
+check('новый проект начинается с нуля', stageProgress(stages()).done, 0);
+check('этапы каркаса опознаются', PIPELINE_IDS.every(isPipelineId), true);
+check('свой этап каркасом не считается', isPipelineId('a1b2c3'), false);
+check('точка решения — анкета', GATE_ID, 'survey');
+check('у нового этапа даты нет', stages().every((s) => s.due === null), true);
+
+const half = stages().map((s, i) => ({ ...s, done: i < 3 }));
+check('прогресс считается по галочкам', stageProgress(half), { done: 3, total: 7, pct: 43 });
+check('текущий этап — первый невыполненный', currentStage(half)?.id, 'custdev');
+check('все закрыты — текущего нет', currentStage(stages().map((s) => ({ ...s, done: true }))), null);
+
+// Галочки ставят не по порядку: «сейчас» обязано означать ближайшее
+// незакрытое дело, а не самое дальнее из тронутых.
+const jumped = stages().map((s) => ({ ...s, done: s.id === 'mvp' }));
+check('пропуск вперёд не двигает текущий этап', currentStage(jumped)?.id, 'call');
+
+check('до договора проект потенциальный', isPotential(stages()), true);
+check('после договора — уже работа', isPotential(half), false);
+
+check('у выполненного этапа дата не горит', dueState({ id: 'call', title: '', done: true, due: '2026-01-01' }, '2026-08-21'), 'none');
+check('без даты не горит ничего', dueState({ id: 'call', title: '', done: false, due: null }, '2026-08-21'), 'none');
+check('вчерашняя дата просрочена', dueState({ id: 'call', title: '', done: false, due: '2026-08-20' }, '2026-08-21'), 'overdue');
+check('сегодняшняя — сегодня', dueState({ id: 'call', title: '', done: false, due: '2026-08-21' }, '2026-08-21'), 'today');
+check('через два дня — скоро', dueState({ id: 'call', title: '', done: false, due: '2026-08-23' }, '2026-08-21'), 'soon');
+check('через неделю — спокойно', dueState({ id: 'call', title: '', done: false, due: '2026-08-28' }, '2026-08-21'), 'ahead');
+
+const spread = spreadDues(stages(), '2026-09-01', '2026-12-01');
+check('даты расставились всем этапам', spread.every((s) => Boolean(s.due)), true);
+check('даты идут по возрастанию', spread.every((s, i) => i === 0 || s.due! >= spread[i - 1].due!), true);
+check('последний этап заканчивается запуском', spread[spread.length - 1].due, '2026-12-01');
+check('первый этап не позже второго', spread[0].due! <= spread[1].due!, true);
+// Кастдевы весят вчетверо больше созвона: равномерная раскладка дала бы
+// заведомо ложный план, а ложный план бросают после первой просрочки.
+const gap = (id: string) => {
+  const i = spread.findIndex((s) => s.id === id);
+  return daysBetween(spread[i].due!, i === 0 ? '2026-09-01' : spread[i - 1].due!);
+};
+check('кастдевы длиннее созвона', gap('custdev') > gap('call'), true);
+check('прогрев длиннее договора', gap('warmup') > gap('contract'), true);
+check('выполненный этап дату не получает', spreadDues(half, '2026-09-01', '2026-12-01')[0].due, null);
+check('запуск раньше старта — раскладки нет', spreadDues(stages(), '2026-12-01', '2026-09-01')[0].due, null);
+
+check('дедлайн через десять дней', daysToDeadline('2026-08-31', '2026-08-21'), 10);
+check('просроченный дедлайн отрицателен', daysToDeadline('2026-08-18', '2026-08-21'), -3);
+check('без дедлайна ничего не считаем', daysToDeadline(null, '2026-08-21'), null);
+
+/* -------------------------------------------------------------------------- */
+section('Прогноз по своей конверсии');
+
+const fc = (date: string, status: string, at?: string): ForecastContact => ({
+  status,
+  first_contact_date: date,
+  status_history: at ? [{ status: status as never, at }] : [],
+});
+
+/** n-е сутки от начала года. Через shiftDate, чтобы не упереться в конец месяца. */
+const day = (n: number) => shiftDate('2026-01-01', n);
+/** n рассылок подряд, по одной в день. */
+const sends = (n: number) => Array.from({ length: n }, (_, i) => fc(day(i), 'sent'));
+
+check('без рассылок считать нечего', forecast([]).sent, 0);
+check('без рассылок данных не хватает', forecast([]).enough, false);
+check('порог статистики', FORECAST_MIN_SENT, 10);
+check('девяти рассылок мало', forecast(sends(9)).enough, false);
+check('десяти уже хватает', forecast(sends(10)).enough, true);
+check('созвонов не было — строка пустая', forecast(sends(20)).call, { count: 0, per: 0, since: 0, left: 0 });
+
+// Семьдесят рассылок, закрытие на семидесятой: следующее стоит столько же.
+const closedAt70 = [...sends(69), fc(day(69), 'closed', `${day(69)}T12:00:00Z`)];
+check('цена закрытия — все рассылки до него', forecast(closedAt70).close.per, 70);
+check('после закрытия счётчик полон', forecast(closedAt70).close.left, 70);
+check('закрытие засчитано одно', forecast(closedAt70).close.count, 1);
+
+// Десять новых рассылок после закрытия: остаток обязан убывать.
+const after10 = [...closedAt70, ...Array.from({ length: 10 }, (_, i) => fc(day(70 + i), 'sent'))];
+check('новые рассылки съедают остаток', forecast(after10).close.left, 60);
+check('прошло с последнего закрытия', forecast(after10).close.since, 10);
+check('цена закрытия не поехала', forecast(after10).close.per, 70);
+
+// Перебрал цену — по арифметике закрытие уже должно было случиться.
+const after80 = [...closedAt70, ...Array.from({ length: 80 }, (_, i) => fc(day(70 + i), 'sent'))];
+check('остаток ниже нуля не уходит', forecast(after80).close.left, 0);
+
+// Два созвона на двадцать рассылок — цена десять.
+const twoCalls = [
+  ...sends(8),
+  fc(day(8), 'call', `${day(8)}T10:00:00Z`),
+  ...Array.from({ length: 10 }, (_, i) => fc(day(9 + i), 'sent')),
+  fc(day(19), 'call', `${day(19)}T10:00:00Z`),
+];
+check('цена созвона — средняя по двум', forecast(twoCalls).call.per, 10);
+check('созвонов засчитано два', forecast(twoCalls).call.count, 2);
+check('закрытый контакт считается и созвоном', forecast(closedAt70).call.count, 1);
+
+check('момент события берётся из истории', reachedAt(fc(day(5), 'call', `${day(5)}T10:00:00Z`), ['call']), day(5));
+check('без истории момент — день касания', reachedAt(fc(day(5), 'call'), ['call']), day(5));
+check('чужой статус момента не даёт', reachedAt(fc(day(5), 'sent'), ['call']), null);
+// Контакт мог уйти в созвон, вернуться и уйти снова — заплачено было раз.
+check(
+  'берётся первый заход в статус',
+  reachedAt(
+    { status: 'call', first_contact_date: day(1), status_history: [
+      { status: 'call' as never, at: `${day(7)}T10:00:00Z` },
+      { status: 'call' as never, at: `${day(3)}T10:00:00Z` },
+    ] },
+    ['call'],
+  ),
+  day(3),
+);
+
+/* -------------------------------------------------------------------------- */
+section('Проект: активы, ссылки, числа');
+
+check('этапы из jsonb приходят массивом', stagesOf({ stages: stages() }).length, 7);
+// В jsonb может лежать что угодно: null после старой записи или объект после
+// правки руками. Экран не должен падать ни на том, ни на другом.
+check('null вместо этапов не роняет', stagesOf({ stages: null as never }), []);
+check('объект вместо этапов не роняет', stagesOf({ stages: {} as never }), []);
+
+check('пустые активы — пустой объект', assetsOf(null), {});
+check('активы не замеряли', hasAssets({}), false);
+check('ноль подписчиков — тоже замер', hasAssets({ ig_followers: 0 }), true);
+check('замерили охват сторис', hasAssets({ ig_reach: 2100 }), true);
+check('null в поле замером не считается', hasAssets({ ig_followers: null }), false);
+
+// Без протокола браузер считает ссылку относительным путём и уводит внутрь
+// приложения — эксперт «открывается» на пустой странице.
+check('ссылка без протокола чинится', externalHref('instagram.com/anna'), 'https://instagram.com/anna');
+check('https не трогаем', externalHref('https://t.me/anna'), 'https://t.me/anna');
+check('http не трогаем', externalHref('http://t.me/anna'), 'http://t.me/anna');
+check('регистр протокола не важен', externalHref('HTTPS://t.me/anna'), 'HTTPS://t.me/anna');
+
+check('разряды разделяются', formatNumber(1200000), '1\u00A0200\u00A0000');
+check('три знака не делятся', formatNumber(640), '640');
+check('четыре знака делятся', formatNumber(1720), '1\u00A0720');
+check('дробное округляется', formatNumber(2100.6), '2\u00A0101');
+check('ноль остаётся нулём', formatNumber(0), '0');
+
+/* -------------------------------------------------------------------------- */
 section('Полнота словарей');
 
 function flatten(obj: unknown, prefix = ''): string[] {
@@ -1370,8 +1401,6 @@ check(
 // не уронит сборку — он просто нарисует пустое место на экране.
 for (const [label, ids, dict] of [
   ['статусы', CONTACT_STATUSES, ru.statuses],
-  ['признаки офферов', PATTERN_IDS, ru.patterns.names],
-  ['подсказки к признакам', PATTERN_IDS, ru.patterns.hints],
   ['достижения', ACHIEVEMENT_IDS, ru.achievements.names],
   ['акценты', ACCENT_KEYS, ru.themes],
 ] as [string, readonly string[], Record<string, string>][]) {

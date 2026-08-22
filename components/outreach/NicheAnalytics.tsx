@@ -65,10 +65,21 @@ export function NicheAnalytics({ contacts }: { contacts: OutreachContact[] }) {
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.label} className="border-t border-divider">
-                    <td className="max-w-[140px] truncate py-2.5 text-sm">{row.label}</td>
-                    <td className="py-2.5 text-center text-sm text-white/60">{row.sent}</td>
-                    <td className="py-2.5 text-center text-sm text-white/60">{row.replied}</td>
-                    <td className="py-2.5 text-right text-sm font-extrabold">{row.rate}%</td>
+                    <td className="py-2.5 text-sm">
+                      {/* Обрезает блок внутри ячейки, а не сама ячейка: в таблице с
+                          автоматической раскладкой max-width на td — пожелание, и длинная
+                          ниша всё равно растянула бы колонку. */}
+                      <span className="block max-w-[140px] truncate">{row.label}</span>
+                    </td>
+                    <td className="py-2.5 text-center text-sm tabular-nums text-white/60">
+                      {row.sent}
+                    </td>
+                    <td className="py-2.5 text-center text-sm tabular-nums text-white/60">
+                      {row.replied}
+                    </td>
+                    <td className="py-2.5 text-right text-sm font-extrabold tabular-nums">
+                      {row.rate}%
+                    </td>
                   </tr>
                 ))}
               </tbody>

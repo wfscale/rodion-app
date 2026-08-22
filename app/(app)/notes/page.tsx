@@ -10,7 +10,7 @@ import { NoteCard, TrashedNoteCard } from '@/components/NoteCard';
 import { NoteSheet } from '@/components/NoteSheet';
 import { ReminderList } from '@/components/reminders/ReminderList';
 import { ReminderSheet } from '@/components/reminders/ReminderSheet';
-import { Button, EmptyState, PageTitle, Segmented, Spinner } from '@/components/ui';
+import { Button, DeskGrid, EmptyState, PageTitle, Segmented, Spinner } from '@/components/ui';
 import { useNotes } from '@/hooks/useNotes';
 import { countByTag, hasNoteToday, resurface } from '@/lib/notes-stats';
 import { standalone } from '@/lib/reminders';
@@ -207,7 +207,7 @@ export default function NotesPage() {
           type="button"
           onClick={() => setTagFilter('all')}
           aria-pressed={tagFilter === 'all'}
-          className={`min-h-[40px] shrink-0 rounded-full border px-4 text-sm font-semibold transition-colors ${
+          className={`min-h-[44px] shrink-0 rounded-full border px-4 text-sm font-semibold transition-colors ${
             tagFilter === 'all'
               ? 'border-white bg-white text-ink'
               : 'border-glass-border bg-white/[0.05] text-white/55'
@@ -227,7 +227,7 @@ export default function NotesPage() {
               type="button"
               onClick={() => setTagFilter(active ? 'all' : noteTag)}
               aria-pressed={active}
-              className={`min-h-[40px] shrink-0 rounded-full border px-4 text-sm font-semibold transition-colors ${
+              className={`min-h-[44px] shrink-0 rounded-full border px-4 text-sm font-semibold transition-colors ${
                 active ? 'border-white bg-white text-ink' : TAG_TONE[noteTag]
               }`}
             >
@@ -251,11 +251,13 @@ export default function NotesPage() {
           text={query.trim() || tagFilter !== 'all' ? t.notes.emptySearch : t.notes.empty}
         />
       ) : (
-        <div className="space-y-2">
+        // На мониторе заметки — однородные карточки без главной и
+        // второстепенной, поэтому колонки равные, а не 1.4 к 1.
+        <DeskGrid className="gap-3 [&>*]:mb-3">
           {visible.map((note, i) => (
             <NoteCard key={note.id} note={note} index={i} onOpen={() => setOpenNote(note)} />
           ))}
-        </div>
+        </DeskGrid>
       )}
     </>
   );
@@ -322,7 +324,7 @@ export default function NotesPage() {
           {notes.trashed.length === 0 ? (
             <EmptyState icon={<Trash2 size={34} />} text={t.notes.trashEmpty} />
           ) : (
-            <div className="space-y-2">
+            <DeskGrid className="gap-3 [&>*]:mb-3">
               {notes.trashed.map((note) => (
                 <TrashedNoteCard
                   key={note.id}
@@ -331,7 +333,7 @@ export default function NotesPage() {
                   onDeleteForever={() => void notes.deleteForever(note.id)}
                 />
               ))}
-            </div>
+            </DeskGrid>
           )}
         </>
       ) : (
