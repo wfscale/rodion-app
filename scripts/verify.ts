@@ -131,6 +131,7 @@ import {
 } from '@/lib/pipeline';
 import { forecast, FORECAST_MIN_SENT, reachedAt, type ForecastContact } from '@/lib/forecast';
 import { assetsOf, externalHref, formatNumber, hasAssets, stagesOf } from '@/lib/project';
+import { snippetPreview, sortSnippets, totalUses } from '@/lib/snippets';
 import { ru } from '@/lib/i18n/ru';
 import { en } from '@/lib/i18n/en';
 
@@ -1368,6 +1369,61 @@ check('три знака не делятся', formatNumber(640), '640');
 check('четыре знака делятся', formatNumber(1720), '1\u00A0720');
 check('дробное округляется', formatNumber(2100.6), '2\u00A0101');
 check('ноль остаётся нулём', formatNumber(0), '0');
+
+/* -------------------------------------------------------------------------- */
+section('Заготовки');
+
+const sn = (over: Partial<Parameters<typeof sortSnippets>[0][number]> = {}) => ({
+  used_count: 0,
+  last_used_at: null,
+  created_at: '2026-08-01T10:00:00Z',
+  ...over,
+});
+
+// Наверх заготовка попадает работой, а не тем, что её перетащили: иначе
+// через месяц список снова придётся разбирать руками.
+check(
+  'частое всплывает наверх',
+  sortSnippets([sn({ used_count: 1 }), sn({ used_count: 9 }), sn({ used_count: 4 })]).map(
+    (x) => x.used_count,
+  ),
+  [9, 4, 1],
+);
+check(
+  'при равном счёте выше свежее',
+  sortSnippets([
+    sn({ used_count: 3, last_used_at: '2026-08-10T10:00:00Z' }),
+    sn({ used_count: 3, last_used_at: '2026-08-20T10:00:00Z' }),
+  ]).map((x) => x.last_used_at),
+  ['2026-08-20T10:00:00Z', '2026-08-10T10:00:00Z'],
+);
+check(
+  'ни разу не использованные — по дате создания',
+  sortSnippets([
+    sn({ created_at: '2026-08-01T10:00:00Z' }),
+    sn({ created_at: '2026-08-09T10:00:00Z' }),
+  ]).map((x) => x.created_at),
+  ['2026-08-09T10:00:00Z', '2026-08-01T10:00:00Z'],
+);
+check('использованная выше нетронутой', sortSnippets([sn(), sn({ used_count: 1 })])[0].used_count, 1);
+check('пустой список не ломается', sortSnippets([]), []);
+check('исходный массив не меняется', (() => {
+  const list = [sn({ used_count: 1 }), sn({ used_count: 5 })];
+  sortSnippets(list);
+  return list[0].used_count;
+})(), 1);
+
+// Заготовки часто начинаются с обращения на отдельной строке: обрезка по
+// символам показала бы у всех одинаковое «Привет!».
+check('предпросмотр берёт первую непустую строку', snippetPreview('\n\nПривет!\nЦена от 90к'), 'Привет!');
+check('пробельные строки пропускаются', snippetPreview('   \n  \nСуть'), 'Суть');
+check('длинная строка обрезается', snippetPreview('а'.repeat(200)).length, 91);
+check('короткая не трогается', snippetPreview('Цена от 90к'), 'Цена от 90к');
+check('пустой текст даёт пустую строку', snippetPreview(''), '');
+check('обрезка не оставляет висячий пробел', snippetPreview(`${'а'.repeat(89)} хвост`, 90), `${'а'.repeat(89)}…`);
+
+check('всего копирований', totalUses([sn({ used_count: 3 }), sn({ used_count: 7 })]), 10);
+check('без использований — ноль', totalUses([sn(), sn()]), 0);
 
 /* -------------------------------------------------------------------------- */
 section('Полнота словарей');

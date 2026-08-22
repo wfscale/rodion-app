@@ -40,12 +40,13 @@ import { Heatmap } from '@/components/progress/Heatmap';
 import { HallOfFame, MentorCard, WeekCompare } from '@/components/progress/InsightCards';
 import { LevelLadder } from '@/components/progress/LevelLadder';
 import { ReminderList } from '@/components/reminders/ReminderList';
+import { SnippetsCard } from '@/components/snippets/SnippetsCard';
 import { BottomNav } from '@/components/BottomNav';
 import type { ChatMessage } from '@/lib/conversation';
 import { EMPTY_FILTERS, nicheOptions, type OutreachFilters as Filters } from '@/lib/outreach-filter';
 import type { GuardView } from '@/lib/shield';
 import type { HomeTask } from '@/components/AppProvider';
-import type { ActivityEntry, OutreachContact, Reminder } from '@/lib/types';
+import type { ActivityEntry, OutreachContact, Reminder, Snippet } from '@/lib/types';
 
 const TODAY = '2026-08-13';
 const NOW = `${TODAY}T12:00`;
@@ -145,6 +146,34 @@ const guardView = (over: Partial<GuardView> = {}): GuardView => ({
   canArm: true,
   ...over,
 });
+
+const snippet = (over: Partial<Snippet>): Snippet =>
+  ({
+    id: Math.random().toString(36).slice(2),
+    user_id: 'u',
+    title: 'Сколько стоит',
+    content: 'Работаю за процент с запуска плюс фикс.\nФикс от 90к, процент обсуждаем на созвоне — он зависит от того, что уже есть.',
+    used_count: 0,
+    last_used_at: null,
+    created_at: '2026-08-01T10:00:00Z',
+    updated_at: '',
+    ...over,
+  }) as Snippet;
+
+const SNIPPETS: Snippet[] = [
+  snippet({ used_count: 23, last_used_at: '2026-08-13T10:00:00Z' }),
+  snippet({
+    title: 'Что конкретно делаю',
+    content: 'Собираю продукт из кастдевов, пишу прогрев и веду продажи.\nТы остаёшься в кадре, всё остальное — на мне.',
+    used_count: 11,
+  }),
+  snippet({
+    title: 'Давай созвонимся',
+    content: 'Давай короткий созвон на 20 минут — покажу, как это выглядит на твоей нише. Когда удобно?',
+    used_count: 4,
+  }),
+  snippet({ title: 'Кейсы', content: 'Скину два разбора запусков в этой нише.', used_count: 0 }),
+];
 
 const CHART = Array.from({ length: 14 }, (_, i) => ({
   date: `2026-07-${String(31 - 13 + i).padStart(2, '0')}`,
@@ -355,6 +384,22 @@ export default function PreviewPage() {
         <HallOfFame contacts={CONTACTS} />
 
         <AccentPicker />
+
+        {/* Заготовки: наполненный список и пустое состояние. */}
+        <SnippetsCard
+          snippets={SNIPPETS}
+          ready
+          onUse={() => undefined}
+          onEdit={() => undefined}
+          onAdd={() => undefined}
+        />
+        <SnippetsCard
+          snippets={[]}
+          ready
+          onUse={() => undefined}
+          onEdit={() => undefined}
+          onAdd={() => undefined}
+        />
 
         {/* Напоминания */}
         <ReminderList

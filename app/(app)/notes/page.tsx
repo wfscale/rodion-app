@@ -10,14 +10,24 @@ import { NoteCard, TrashedNoteCard } from '@/components/NoteCard';
 import { NoteSheet } from '@/components/NoteSheet';
 import { ReminderList } from '@/components/reminders/ReminderList';
 import { ReminderSheet } from '@/components/reminders/ReminderSheet';
-import { Button, DeskGrid, EmptyState, PageTitle, Segmented, Spinner } from '@/components/ui';
+import { SnippetsCard } from '@/components/snippets/SnippetsCard';
+import { SnippetSheet } from '@/components/snippets/SnippetSheet';
+import {
+  Button,
+  DeskColumns,
+  DeskGrid,
+  EmptyState,
+  PageTitle,
+  Segmented,
+  Spinner,
+} from '@/components/ui';
 import { useNotes } from '@/hooks/useNotes';
+import { useSnippets } from '@/hooks/useSnippets';
 import { countByTag, hasNoteToday, resurface } from '@/lib/notes-stats';
 import { standalone } from '@/lib/reminders';
-import { NOTE_TAGS, type Note, type NoteTag, type Reminder } from '@/lib/types';
+import { NOTE_TAGS, type Note, type NoteTag, type Reminder, type Snippet } from '@/lib/types';
 import { onceKey, XP } from '@/lib/xp';
 
-type Tab = 'notes' | 'reminders';
 type TagFilter = NoteTag | 'all';
 
 /** Цвет метки. Единственное место в приложении, где цвет несёт смысл сам по себе. */
@@ -32,8 +42,8 @@ export default function NotesPage() {
   const { t, tf, days } = useLanguage();
   const app = useApp();
   const notes = useNotes();
+  const snippets = useSnippets();
 
-  const [tab, setTab] = useState<Tab>('notes');
   const [draft, setDraft] = useState('');
   const [tag, setTag] = useState<NoteTag>('thought');
   const [tagFilter, setTagFilter] = useState<TagFilter>('all');
@@ -41,6 +51,9 @@ export default function NotesPage() {
   const [openNote, setOpenNote] = useState<Note | null>(null);
   const [showTrash, setShowTrash] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const [snippetOpen, setSnippetOpen] = useState(false);
+  const [openSnippet, setOpenSnippet] = useState<Snippet | null>(null);
 
   const [reminderOpen, setReminderOpen] = useState(false);
   const [openReminder, setOpenReminder] = useState<Reminder | null>(null);
@@ -91,7 +104,7 @@ export default function NotesPage() {
 
   /* ------------------------------------------------------------------ */
 
-  const notesTab = (
+  const notesColumn = (
     <>
       {/* Полоса состояния: сколько накопилось. Заметки перестают быть
           свалкой, когда видно, что они складываются во что-то. */}
@@ -251,21 +264,32 @@ export default function NotesPage() {
           text={query.trim() || tagFilter !== 'all' ? t.notes.emptySearch : t.notes.empty}
         />
       ) : (
-        // На мониторе заметки — однородные карточки без главной и
-        // второстепенной, поэтому колонки равные, а не 1.4 к 1.
-        <DeskGrid className="gap-3 [&>*]:mb-3">
+        // Столбик, а не сетка: колонку страницы уже делит DeskColumns, и
+        // вторая сетка внутри неё нарезала бы заметки на узкие огрызки.
+        <div className="space-y-2">
           {visible.map((note, i) => (
             <NoteCard key={note.id} note={note} index={i} onOpen={() => setOpenNote(note)} />
           ))}
-        </DeskGrid>
+        </div>
       )}
     </>
   );
 
-  const remindersTab = (
+  const remindersColumn = (
     <>
       {app.remindersReady ? (
         <>
+          {/* Заголовок появился вместе с колонкой: раньше раздел называла
+              вкладка, а теперь оба списка на экране одновременно. */}
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <h2 className="text-sm font-bold tracking-wide">{t.notes.tabReminders}</h2>
+            {app.remindersDue > 0 && (
+              <span className="shrink-0 rounded-full bg-warn px-2 py-0.5 text-xs font-extrabold tabular-nums text-ink">
+                {app.remindersDue}
+              </span>
+            )}
+          </div>
+
           <Button
             full
             onClick={() => {
@@ -337,26 +361,39 @@ export default function NotesPage() {
           )}
         </>
       ) : (
-        <>
-          {/* Две вкладки: мысли и напоминания. Напоминания, привязанные к
-              людям, сюда не попадают — они живут в блоке касаний. */}
-          <Segmented<Tab>
-            value={tab}
-            onChange={setTab}
-            options={[
-              { value: 'notes', label: t.notes.tabNotes },
-              {
-                value: 'reminders',
-                label:
-                  app.remindersDue > 0
-                    ? `${t.notes.tabReminders} · ${app.remindersDue}`
-                    : t.notes.tabReminders,
-              },
-            ]}
-          />
+        /*
+          Вкладок больше нет: заготовки, заметки и напоминания видны сразу.
+          Переключение между ними стоило тапа каждый раз, когда нужно было
+          свериться с одним, находясь в другом, — а это половина заходов сюда.
 
-          {tab === 'notes' ? notesTab : remindersTab}
-        </>
+          Заготовки стоят первыми. Это единственный список на странице, к
+          которому возвращаются каждый день: заметки просят что-то написать,
+          ничего не обещая взамен, и потому не открывались месяцами.
+          Напоминания, привязанные к людям, сюда не попадают — они живут в
+          блоке касаний на рассылках.
+        */
+        <DeskColumns
+          main={
+            <>
+              <SnippetsCard
+                snippets={snippets.snippets}
+                ready={snippets.ready}
+                onUse={(id) => void snippets.use(id)}
+                onEdit={(snippet) => {
+                  setOpenSnippet(snippet);
+                  setSnippetOpen(true);
+                }}
+                onAdd={() => {
+                  setOpenSnippet(null);
+                  setSnippetOpen(true);
+                }}
+              />
+
+              {notesColumn}
+            </>
+          }
+          side={remindersColumn}
+        />
       )}
 
       <NoteSheet
@@ -367,6 +404,17 @@ export default function NotesPage() {
           setOpenNote((current) => (current ? { ...current, ...patch } : current));
         }}
         onTrash={notes.trashNote}
+      />
+
+      <SnippetSheet
+        open={snippetOpen}
+        snippet={openSnippet}
+        onClose={() => {
+          setSnippetOpen(false);
+          setOpenSnippet(null);
+        }}
+        onSave={(draft, id) => void snippets.save(draft, id)}
+        onDelete={(id) => void snippets.remove(id)}
       />
 
       <ReminderSheet

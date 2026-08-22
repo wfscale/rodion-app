@@ -206,9 +206,14 @@ export default function OutreachPage() {
         <PulseBar pct={app.quota.pct} color={app.quota.closed ? '#64FF8C' : '#FFFFFF'} />
       </GlassCard>
 
+      {/* Цена события в рассылках: воронка говорит «сколько уже»,
+          эта карточка — «сколько ещё». */}
+      <ForecastCard contacts={app.contacts} delay={4} />
+
       {/*
-        Страховка серии — сразу под квотой, потому что решение «сегодня не
-        вытяну» принимается ровно в тот момент, когда смотришь на квоту.
+        Страховка серии — под цифрами дня. Решение «сегодня не вытяну»
+        принимается после того, как посмотрел на квоту и на остаток, а не
+        первым делом при заходе на страницу.
       */}
       <ShieldCard
         guard={app.guard}
@@ -220,19 +225,6 @@ export default function OutreachPage() {
         onPause={(on) => void app.setPause(on)}
         onAuto={(value) => void app.setShieldAuto(value)}
         delay={3}
-      />
-
-      {/* Цена события в рассылках: воронка говорит «сколько уже»,
-          эта карточка — «сколько ещё». */}
-      <ForecastCard contacts={app.contacts} delay={4} />
-
-      {/* Воронка */}
-      <FunnelChart
-        sent={stats.sent}
-        replied={stats.replied}
-        calls={stats.calls}
-        closed={stats.closed}
-        onLevelClick={filterByFunnel}
       />
 
       {canNiches ? (
@@ -252,7 +244,24 @@ export default function OutreachPage() {
   /** Левая колонка: то, чем работают руками. */
   const main = (
     <>
-      {/* Быстрый ввод и кнопка новой рассылки — всегда наверху. */}
+      {/*
+        Воронка — первое, что видно на странице, и на телефоне тоже: заходя
+        сюда, в первую очередь смотрят «сколько всего написано и что из этого
+        вышло». Раньше она лежала в правой колонке, то есть на телефоне
+        оказывалась ниже всего списка экспертов, и до неё не долистывали.
+
+        Не на всю ширину, а в левой колонке: на мониторе полоса воронки в
+        1200px превращается в нить, по которой нечего читать.
+      */}
+      <FunnelChart
+        sent={stats.sent}
+        replied={stats.replied}
+        calls={stats.calls}
+        closed={stats.closed}
+        onLevelClick={filterByFunnel}
+      />
+
+      {/* Быстрый ввод и кнопка новой рассылки. */}
       <div className="flex gap-2">
         <Button
           full

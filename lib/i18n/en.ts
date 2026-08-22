@@ -570,6 +570,26 @@ export const en: Dict = {
     ember: 'Ember',
   },
 
+  snippets: {
+    title: 'Snippets',
+    add: 'New snippet',
+    empty: 'The answers you type ten times over — save once and copy.',
+    emptyHint: 'Pricing · What exactly I do · Let us have a call',
+    name: 'Name',
+    namePh: 'Pricing',
+    text: 'Text',
+    textPh: 'What you send',
+    copy: 'Copy',
+    copied: 'Copied',
+    copyFailed: 'Could not copy',
+    uses: '{n}',
+    usesLabel: 'times',
+    neverUsed: 'not used yet',
+    total: 'Copied {n}',
+    notReady: 'Snippets appear after migration v9 in Supabase.',
+    deleteConfirm: 'Delete this snippet?',
+  },
+
   reminders: {
     title: 'Reminders',
     tab: 'Reminders',
