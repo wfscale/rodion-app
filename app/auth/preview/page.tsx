@@ -190,6 +190,10 @@ export default function PreviewPage() {
 
   return (
     <main className="md:pl-[240px]">
+      {/* Только для съёмки: в headless анимация появления карточек может не
+          проиграть, и они остаются прозрачными. */}
+      <style>{'[style*="opacity:0"]{opacity:1 !important;transform:none !important}'}</style>
+
       <div className="pb-content mx-auto w-full max-w-lg space-y-4 px-4 pt-4 md:max-w-none md:px-8 xl:px-10 2xl:max-w-[1720px]">
         <HomeHeader
           streak={3}
@@ -409,6 +413,7 @@ export default function PreviewPage() {
           today={TODAY}
           onToggle={() => undefined}
           onOpen={() => undefined}
+          onDelete={() => undefined}
         />
 
         {/* Шторка переписки: открывается кнопкой, потому что внутри её

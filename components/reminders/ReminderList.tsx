@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Check, RotateCcw, User } from 'lucide-react';
+import { Check, RotateCcw, Trash2, User } from 'lucide-react';
 import { useMemo } from 'react';
 import { useLanguage } from '@/components/LanguageProvider';
 import { Badge, EmptyState } from '@/components/ui';
@@ -22,6 +22,8 @@ type Props = {
   today: string;
   onToggle: (id: string) => void;
   onOpen: (reminder: Reminder) => void;
+  /** Удалить закрытое напоминание. Без обработчика корзина не показывается. */
+  onDelete?: (id: string) => void;
 };
 
 function Group({
@@ -60,12 +62,14 @@ function Row({
   contactName,
   onToggle,
   onOpen,
+  onDelete,
 }: {
   reminder: Reminder;
   urgency: ReminderUrgency;
   contactName: string | null;
   onToggle: (id: string) => void;
   onOpen: (reminder: Reminder) => void;
+  onDelete?: (id: string) => void;
 }) {
   const { t, tf, lang } = useLanguage();
 
@@ -120,18 +124,37 @@ function Row({
             </Badge>
           )}
 
-          <button
-            type="button"
-            onClick={() => onToggle(reminder.id)}
-            aria-label={reminder.done ? t.reminders.markUndone : t.reminders.markDone}
-            className={`flex h-11 w-11 items-center justify-center rounded-full border transition-colors ${
-              reminder.done
-                ? 'border-glass-border bg-white/[0.05] text-white/40'
-                : 'border-white bg-white text-ink'
-            }`}
-          >
-            {reminder.done ? <RotateCcw size={16} /> : <Check size={18} strokeWidth={2.6} />}
-          </button>
+          {/*
+            У закрытого напоминания два действия: вернуть в работу и убрать
+            совсем. Без второго список закрытых копится бесконечно и
+            превращается в архив, который никто не разбирает. Подтверждения
+            нет намеренно: удаляется то, что уже сделано, — терять нечего.
+          */}
+          <div className="flex items-center gap-2">
+            {reminder.done && onDelete && (
+              <button
+                type="button"
+                onClick={() => onDelete(reminder.id)}
+                aria-label={t.common.delete}
+                className="flex h-11 w-11 items-center justify-center rounded-full text-white/25 transition-colors hover:bg-[rgba(255,107,107,0.12)] hover:text-danger"
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => onToggle(reminder.id)}
+              aria-label={reminder.done ? t.reminders.markUndone : t.reminders.markDone}
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                reminder.done
+                  ? 'border-glass-border bg-white/[0.05] text-white/40'
+                  : 'border-white bg-white text-ink'
+              }`}
+            >
+              {reminder.done ? <RotateCcw size={16} /> : <Check size={18} strokeWidth={2.6} />}
+            </button>
+          </div>
         </div>
       </div>
     </motion.div>
@@ -145,7 +168,15 @@ function Row({
  * в группе «Пора» весь день, пока его не закроют. Напоминание, которое можно
  * не заметить, бессмысленно.
  */
-export function ReminderList({ reminders, contacts, now, today, onToggle, onOpen }: Props) {
+export function ReminderList({
+  reminders,
+  contacts,
+  now,
+  today,
+  onToggle,
+  onOpen,
+  onDelete,
+}: Props) {
   const { t } = useLanguage();
 
   const nameById = useMemo(() => {
@@ -169,6 +200,7 @@ export function ReminderList({ reminders, contacts, now, today, onToggle, onOpen
         contactName={reminder.contact_id ? (nameById.get(reminder.contact_id) ?? null) : null}
         onToggle={onToggle}
         onOpen={onOpen}
+        onDelete={onDelete}
       />
     ));
 

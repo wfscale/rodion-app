@@ -311,6 +311,7 @@ export default function NotesPage() {
               setOpenReminder(reminder);
               setReminderOpen(true);
             }}
+            onDelete={(id) => void app.deleteReminder(id)}
           />
         </>
       ) : (
