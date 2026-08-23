@@ -132,6 +132,14 @@ import {
 import { forecast, FORECAST_MIN_SENT, reachedAt, type ForecastContact } from '@/lib/forecast';
 import { assetsOf, externalHref, formatNumber, hasAssets, stagesOf } from '@/lib/project';
 import { snippetPreview, sortSnippets, totalUses } from '@/lib/snippets';
+import {
+  audioPath,
+  extForMime,
+  formatDuration,
+  MAX_RECORDING_SECONDS,
+  pickMimeType,
+  RECORDING_WARN_SECONDS,
+} from '@/lib/audio';
 import { ru } from '@/lib/i18n/ru';
 import { en } from '@/lib/i18n/en';
 
@@ -950,6 +958,7 @@ section('Заметки');
 
 const note = (id: string, createdAt: string, tag: 'idea' | 'goal' | 'insight' | 'thought' = 'thought') => ({
   id, user_id: 'u', content: `мысль ${id}`, tag, deleted_at: null,
+  audio_path: null, audio_duration: null,
   created_at: createdAt, updated_at: createdAt,
 });
 
@@ -1424,6 +1433,40 @@ check('обрезка не оставляет висячий пробел', snip
 
 check('всего копирований', totalUses([sn({ used_count: 3 }), sn({ used_count: 7 })]), 10);
 check('без использований — ноль', totalUses([sn(), sn()]), 0);
+
+/* -------------------------------------------------------------------------- */
+section('Голосовые заметки');
+
+// Safari и Chrome пишут в разные контейнеры. Ошибка здесь означает файл,
+// который потом нигде не проигрывается, — а понять это можно только на живом
+// телефоне, через неделю после записи.
+check('opus предпочтительнее всего', pickMimeType((m) => m.startsWith('audio/')), 'audio/webm;codecs=opus');
+check('на Safari берём mp4', pickMimeType((m) => m.startsWith('audio/mp4')), 'audio/mp4;codecs=mp4a.40.2');
+check('когда не умеет ничего — пусто', pickMimeType(() => false), '');
+check('бросающая проверка не роняет выбор', pickMimeType((m) => {
+  if (m.includes('webm')) throw new Error('нет');
+  return m === 'audio/mp4';
+}), 'audio/mp4');
+
+check('webm остаётся webm', extForMime('audio/webm;codecs=opus'), 'webm');
+check('mp4 становится m4a', extForMime('audio/mp4'), 'm4a');
+check('ogg остаётся ogg', extForMime('audio/ogg;codecs=opus'), 'ogg');
+check('регистр не важен', extForMime('AUDIO/MP4'), 'm4a');
+check('неизвестный тип пишем как webm', extForMime('что-то своё'), 'webm');
+check('пустой тип не роняет', extForMime(''), 'webm');
+
+// Первая папка пути — id владельца: по ней работает политика хранилища.
+check('путь начинается с владельца', audioPath('u-1', 'n-2', 'audio/mp4'), 'u-1/n-2.m4a');
+check('и учитывает формат', audioPath('u-1', 'n-2', 'audio/webm;codecs=opus'), 'u-1/n-2.webm');
+
+check('секунды с ведущим нулём', formatDuration(67), '1:07');
+check('меньше минуты', formatDuration(9), '0:09');
+check('ровная минута', formatDuration(60), '1:00');
+check('ноль', formatDuration(0), '0:00');
+check('дробное округляется вниз', formatDuration(9.9), '0:09');
+check('отрицательное не ломает', formatDuration(-5), '0:00');
+check('десять минут', formatDuration(MAX_RECORDING_SECONDS), '10:00');
+check('предупреждаем за минуту', MAX_RECORDING_SECONDS - RECORDING_WARN_SECONDS, 60);
 
 /* -------------------------------------------------------------------------- */
 section('Полнота словарей');

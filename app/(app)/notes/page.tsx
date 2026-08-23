@@ -8,6 +8,7 @@ import { GlassCard } from '@/components/GlassCard';
 import { useLanguage } from '@/components/LanguageProvider';
 import { NoteCard, TrashedNoteCard } from '@/components/NoteCard';
 import { NoteSheet } from '@/components/NoteSheet';
+import { VoiceRecorder } from '@/components/notes/VoiceRecorder';
 import { ReminderList } from '@/components/reminders/ReminderList';
 import { ReminderSheet } from '@/components/reminders/ReminderSheet';
 import { SnippetsCard } from '@/components/snippets/SnippetsCard';
@@ -25,6 +26,7 @@ import { useNotes } from '@/hooks/useNotes';
 import { useSnippets } from '@/hooks/useSnippets';
 import { countByTag, hasNoteToday, resurface } from '@/lib/notes-stats';
 import { standalone } from '@/lib/reminders';
+import type { Recording } from '@/hooks/useVoiceRecorder';
 import { NOTE_TAGS, type Note, type NoteTag, type Reminder, type Snippet } from '@/lib/types';
 import { onceKey, XP } from '@/lib/xp';
 
@@ -102,10 +104,41 @@ export default function NotesPage() {
     }
   }
 
+  /**
+   * Сохранить запись.
+   *
+   * Расшифровка сразу становится текстом заметки: искать по заметкам надо и
+   * по сказанному вслух, иначе через месяц в списке лежат сорок безымянных
+   * записей. Метка — «мысль»: выбирать её в момент записи некогда, а сменить
+   * потом можно одним тапом.
+   */
+  async function saveVoice(recording: Recording): Promise<boolean> {
+    const firstToday = !hasNoteToday(notes.notes, app.today);
+
+    await notes.addNote(recording.transcript, 'thought', {
+      blob: recording.blob,
+      mime: recording.mime,
+      seconds: recording.seconds,
+    });
+
+    if (firstToday) {
+      await app.awardXp(XP.NOTE_FIRST, 'note', onceKey.note(app.today));
+    }
+    return true;
+  }
+
   /* ------------------------------------------------------------------ */
 
   const notesColumn = (
     <>
+      {/*
+        Запись голоса — самый верх раздела и один тап от нажатия до начала.
+        Мысль живёт секунд десять: любой экран между ней и микрофоном
+        означает, что она не запишется вообще. Метка, описание и правка
+        делаются потом, по готовой заметке.
+      */}
+      <VoiceRecorder onSave={saveVoice} />
+
       {/* Полоса состояния: сколько накопилось. Заметки перестают быть
           свалкой, когда видно, что они складываются во что-то. */}
       <div className="grid grid-cols-3 gap-2">
@@ -268,7 +301,13 @@ export default function NotesPage() {
         // вторая сетка внутри неё нарезала бы заметки на узкие огрызки.
         <div className="space-y-2">
           {visible.map((note, i) => (
-            <NoteCard key={note.id} note={note} index={i} onOpen={() => setOpenNote(note)} />
+            <NoteCard
+              key={note.id}
+              note={note}
+              index={i}
+              onOpen={() => setOpenNote(note)}
+              audioUrl={notes.audioUrl}
+            />
           ))}
         </div>
       )}
@@ -405,6 +444,7 @@ export default function NotesPage() {
           setOpenNote((current) => (current ? { ...current, ...patch } : current));
         }}
         onTrash={notes.trashNote}
+        audioUrl={notes.audioUrl}
       />
 
       <SnippetSheet

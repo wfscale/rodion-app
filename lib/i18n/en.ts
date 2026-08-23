@@ -570,6 +570,28 @@ export const en: Dict = {
     ember: 'Ember',
   },
 
+  voice: {
+    record: 'Record a voice note',
+    recording: 'Recording',
+    stop: 'Save',
+    cancel: 'Cancel',
+    play: 'Play',
+    pause: 'Pause',
+    saving: 'Saving…',
+    failed: 'no file',
+    almostDone: 'Recording stops on its own in {n}s',
+    limit: 'Recording will stop on its own',
+    denied: 'No microphone. Allow access in the browser settings.',
+    unsupported: 'This device cannot record audio.',
+    listening: 'Hearing',
+    noTranscript: 'This browser does not transcribe speech — the recording is saved as is.',
+    transcriptHint: 'You can fix the words after saving.',
+    untitled: 'No description',
+    addNote: 'Description',
+    addNotePh: 'What this is about, in one line',
+    notReady: 'Voice notes appear after migration v10 in Supabase.',
+  },
+
   snippets: {
     title: 'Snippets',
     add: 'New snippet',

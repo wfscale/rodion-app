@@ -4,6 +4,7 @@ import { Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { BottomSheet } from '@/components/BottomSheet';
 import { useLanguage } from '@/components/LanguageProvider';
+import { AudioPlayer } from '@/components/notes/AudioPlayer';
 import { Badge, Button, Segmented } from '@/components/ui';
 import { formatDateTime } from '@/lib/date';
 import { NOTE_TAGS, type Note, type NoteTag } from '@/lib/types';
@@ -14,11 +15,14 @@ export function NoteSheet({
   onClose,
   onSave,
   onTrash,
+  audioUrl,
 }: {
   note: Note | null;
   onClose: () => void;
   onSave: (id: string, patch: { content: string; tag: NoteTag }) => Promise<void>;
   onTrash: (id: string) => Promise<void>;
+  /** Подписать ссылку на запись. Без него плеер не показывается. */
+  audioUrl?: (path: string) => Promise<string | null>;
 }) {
   const { t, lang } = useLanguage();
 
@@ -44,7 +48,9 @@ export function NoteSheet({
   const edited = data.updated_at && data.updated_at !== data.created_at;
 
   async function save() {
-    if (!data || !content.trim()) return;
+    // У голосовой заметки текста может не быть вовсе: мысль записана голосом,
+    // и требовать описание значит мешать её сохранить.
+    if (!data || (!content.trim() && !data.audio_path)) return;
     setBusy(true);
     try {
       await onSave(data.id, { content: content.trim(), tag });
@@ -99,6 +105,12 @@ export function NoteSheet({
       }
     >
       <div className="space-y-4">
+        {/* Плеер стоит над текстом и виден в обоих режимах: правя расшифровку,
+            приходится переслушивать — а ради этого голосовые и заводились. */}
+        {data.audio_path && audioUrl && (
+          <AudioPlayer path={data.audio_path} duration={data.audio_duration} resolve={audioUrl} />
+        )}
+
         {editing ? (
           <>
             <textarea
@@ -106,6 +118,7 @@ export function NoteSheet({
               rows={10}
               value={content}
               onChange={(e) => setContent(e.target.value)}
+              placeholder={t.voice.addNotePh}
               className="field"
             />
 
@@ -120,7 +133,11 @@ export function NoteSheet({
           </>
         ) : (
           <>
-            <p className="whitespace-pre-wrap text-base leading-relaxed">{data.content}</p>
+            {data.content.trim() ? (
+              <p className="whitespace-pre-wrap text-base leading-relaxed">{data.content}</p>
+            ) : (
+              <p className="text-base italic leading-relaxed text-white/30">{t.voice.untitled}</p>
+            )}
 
             <div className="flex items-center gap-2 border-t border-divider pt-3">
               <Badge>{t.tags[data.tag]}</Badge>
