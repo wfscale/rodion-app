@@ -2,11 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/components/AppProvider';
+import { audioPath } from '@/lib/audio';
 import { createClient } from '@/lib/supabase/client';
 import type { Note, NoteTag } from '@/lib/types';
 
 /** Сколько дней заметка лежит в корзине до безвозвратного удаления. */
 export const TRASH_DAYS = 30;
+
+/** Приватное хранилище записей голоса. */
+export const VOICE_BUCKET = 'voice-notes';
+
+/** Запись, которую надо приложить к заметке. */
+export type NoteAudio = { blob: Blob; mime: string; seconds: number };
 
 export function useNotes() {
   const { user } = useApp();
@@ -19,14 +26,34 @@ export function useNotes() {
   const load = useCallback(async () => {
     if (!user) return;
 
-    // Чистим корзину от всего, что пролежало дольше 30 дней.
+    // Чистим корзину от всего, что пролежало дольше 30 дней. Сначала звук:
+    // удалить строку первой значит навсегда потерять путь к файлу, и он
+    // останется в хранилище мусором, о котором никто уже не узнает.
     const cutoff = new Date(Date.now() - TRASH_DAYS * 86_400_000).toISOString();
-    await supabase
+
+    const { data: expired } = await supabase
       .from('notes')
-      .delete()
+      .select('id, audio_path')
       .eq('user_id', user.id)
       .not('deleted_at', 'is', null)
       .lt('deleted_at', cutoff);
+
+    const expiredAudio = ((expired as { audio_path: string | null }[]) ?? [])
+      .map((row) => row.audio_path)
+      .filter((path): path is string => Boolean(path));
+
+    if (expiredAudio.length > 0) {
+      await supabase.storage.from(VOICE_BUCKET).remove(expiredAudio);
+    }
+
+    if ((expired?.length ?? 0) > 0) {
+      await supabase
+        .from('notes')
+        .delete()
+        .eq('user_id', user.id)
+        .not('deleted_at', 'is', null)
+        .lt('deleted_at', cutoff);
+    }
 
     const { data, error: loadError } = await supabase
       .from('notes')
@@ -43,17 +70,55 @@ export function useNotes() {
     void load();
   }, [load]);
 
+  /**
+   * Новая заметка. audio — необязательная запись голоса.
+   *
+   * Файл уходит в хранилище первым, и только после успеха появляется строка:
+   * заметка со ссылкой на несуществующий файл выглядит как потерянная мысль,
+   * а это ровно то, ради чего голосовые и заводились.
+   */
   const addNote = useCallback(
-    async (content: string, tag: NoteTag) => {
-      if (!user || !content.trim()) return;
+    async (content: string, tag: NoteTag, audio?: NoteAudio) => {
+      if (!user) return;
+      // Без звука пустая заметка бессмысленна, со звуком — нормальна:
+      // расшифровки может не быть, а мысль записана.
+      if (!content.trim() && !audio) return;
+
+      let path: string | null = null;
+
+      if (audio) {
+        const id =
+          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+
+        path = audioPath(user.id, id, audio.mime);
+
+        const { error: uploadError } = await supabase.storage
+          .from(VOICE_BUCKET)
+          .upload(path, audio.blob, { contentType: audio.mime, upsert: false });
+
+        if (uploadError) {
+          setError(uploadError.message);
+          return;
+        }
+      }
 
       const { data, error: insertError } = await supabase
         .from('notes')
-        .insert({ user_id: user.id, content: content.trim(), tag } as never)
+        .insert({
+          user_id: user.id,
+          content: content.trim(),
+          tag,
+          audio_path: path,
+          audio_duration: audio ? Math.round(audio.seconds) : null,
+        } as never)
         .select('*')
         .single();
 
       if (insertError) {
+        // Строка не появилась — файл остался бы висеть без владельца.
+        if (path) await supabase.storage.from(VOICE_BUCKET).remove([path]);
         setError(insertError.message);
         return;
       }
@@ -61,6 +126,28 @@ export function useNotes() {
       setNotes((previous) => [data as Note, ...previous]);
     },
     [supabase, user],
+  );
+
+  /**
+   * Ссылка на запись, действительная час.
+   *
+   * Хранилище приватное, и постоянной ссылки у файла нет. Подписываем по
+   * требованию — при первом нажатии на воспроизведение, а не для всего
+   * списка сразу: в списке из сорока заметок это сорок лишних запросов.
+   */
+  const audioUrl = useCallback(
+    async (path: string): Promise<string | null> => {
+      const { data, error: signError } = await supabase.storage
+        .from(VOICE_BUCKET)
+        .createSignedUrl(path, 3600);
+
+      if (signError) {
+        setError(signError.message);
+        return null;
+      }
+      return data?.signedUrl ?? null;
+    },
+    [supabase],
   );
 
   const updateNote = useCallback(
@@ -119,11 +206,21 @@ export function useNotes() {
 
   const deleteForever = useCallback(
     async (id: string) => {
+      const path = notes.find((note) => note.id === id)?.audio_path ?? null;
+
       setNotes((previous) => previous.filter((note) => note.id !== id));
+
       const { error: deleteError } = await supabase.from('notes').delete().eq('id', id);
-      if (deleteError) setError(deleteError.message);
+      if (deleteError) {
+        setError(deleteError.message);
+        return;
+      }
+
+      // Запись удаляется следом: строки уже нет, и путь к файлу больше
+      // взять неоткуда.
+      if (path) await supabase.storage.from(VOICE_BUCKET).remove([path]);
     },
-    [supabase],
+    [supabase, notes],
   );
 
   const active = useMemo(() => notes.filter((note) => !note.deleted_at), [notes]);
@@ -135,6 +232,7 @@ export function useNotes() {
     loading,
     error,
     addNote,
+    audioUrl,
     updateNote,
     trashNote,
     restoreNote,

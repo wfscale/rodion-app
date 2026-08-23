@@ -40,13 +40,15 @@ import { Heatmap } from '@/components/progress/Heatmap';
 import { HallOfFame, MentorCard, WeekCompare } from '@/components/progress/InsightCards';
 import { LevelLadder } from '@/components/progress/LevelLadder';
 import { ReminderList } from '@/components/reminders/ReminderList';
+import { NoteCard } from '@/components/NoteCard';
+import { VoiceRecorder } from '@/components/notes/VoiceRecorder';
 import { SnippetsCard } from '@/components/snippets/SnippetsCard';
 import { BottomNav } from '@/components/BottomNav';
 import type { ChatMessage } from '@/lib/conversation';
 import { EMPTY_FILTERS, nicheOptions, type OutreachFilters as Filters } from '@/lib/outreach-filter';
 import type { GuardView } from '@/lib/shield';
 import type { HomeTask } from '@/components/AppProvider';
-import type { ActivityEntry, OutreachContact, Reminder, Snippet } from '@/lib/types';
+import type { ActivityEntry, Note, OutreachContact, Reminder, Snippet } from '@/lib/types';
 
 const TODAY = '2026-08-13';
 const NOW = `${TODAY}T12:00`;
@@ -173,6 +175,27 @@ const SNIPPETS: Snippet[] = [
     used_count: 4,
   }),
   snippet({ title: 'Кейсы', content: 'Скину два разбора запусков в этой нише.', used_count: 0 }),
+];
+
+/* Заметки: обычная, голосовая с расшифровкой и голосовая без неё. */
+const NOTES: Note[] = [
+  {
+    id: 'n1', user_id: 'u', tag: 'insight',
+    content: 'Эксперты покупают не лиды, а доказательство, что они не зря столько лет вкладывались.',
+    audio_path: null, audio_duration: null, deleted_at: null,
+    created_at: '2026-08-21T15:00:00Z', updated_at: '2026-08-21T15:00:00Z',
+  },
+  {
+    id: 'n2', user_id: 'u', tag: 'idea',
+    content: 'Мысль про заход в недвижимость через личный бренд, а не через лиды. Начать с анкеты и посмотреть отклик.',
+    audio_path: 'u/n2.webm', audio_duration: 47, deleted_at: null,
+    created_at: '2026-08-22T09:12:00Z', updated_at: '2026-08-22T09:12:00Z',
+  },
+  {
+    id: 'n3', user_id: 'u', tag: 'thought', content: '',
+    audio_path: 'u/n3.webm', audio_duration: 132, deleted_at: null,
+    created_at: '2026-08-23T08:40:00Z', updated_at: '2026-08-23T08:40:00Z',
+  },
 ];
 
 const CHART = Array.from({ length: 14 }, (_, i) => ({
@@ -388,6 +411,21 @@ export default function PreviewPage() {
         <HallOfFame contacts={CONTACTS} />
 
         <AccentPicker />
+
+        {/* Голосовая заметка: запись и карточки — с расшифровкой и без неё. */}
+        <VoiceRecorder onSave={async () => true} />
+
+        <div className="space-y-2">
+          {NOTES.map((n, i) => (
+            <NoteCard
+              key={n.id}
+              note={n}
+              index={i}
+              onOpen={() => undefined}
+              audioUrl={async () => null}
+            />
+          ))}
+        </div>
 
         {/* Заготовки: наполненный список и пустое состояние. */}
         <SnippetsCard
