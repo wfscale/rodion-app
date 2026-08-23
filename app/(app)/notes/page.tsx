@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Bell, History, Lightbulb, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
+import { Bell, History, Lightbulb, Mic, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useApp } from '@/components/AppProvider';
 import { GlassCard } from '@/components/GlassCard';
@@ -49,6 +49,7 @@ export default function NotesPage() {
   const [draft, setDraft] = useState('');
   const [tag, setTag] = useState<NoteTag>('thought');
   const [tagFilter, setTagFilter] = useState<TagFilter>('all');
+  const [voiceOnly, setVoiceOnly] = useState(false);
   const [query, setQuery] = useState('');
   const [openNote, setOpenNote] = useState<Note | null>(null);
   const [showTrash, setShowTrash] = useState(false);
@@ -77,14 +78,20 @@ export default function NotesPage() {
 
   const fromPast = useMemo(() => resurface(notes.notes, app.today), [notes.notes, app.today]);
 
+  const voiceCount = useMemo(
+    () => notes.notes.filter((note) => note.audio_path).length,
+    [notes.notes],
+  );
+
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return notes.notes.filter((note) => {
+      if (voiceOnly && !note.audio_path) return false;
       if (tagFilter !== 'all' && note.tag !== tagFilter) return false;
       if (needle && !note.content.toLowerCase().includes(needle)) return false;
       return true;
     });
-  }, [notes.notes, query, tagFilter]);
+  }, [notes.notes, query, tagFilter, voiceOnly]);
 
   const generalReminders = useMemo(() => standalone(app.reminders), [app.reminders]);
 
@@ -265,6 +272,26 @@ export default function NotesPage() {
           </span>
         </button>
 
+        {/* Голосовые надо уметь найти отдельно: их переслушивают ради
+            интонации, а не ищут по словам, и в общем списке они теряются
+            между текстовыми. Чип появляется, только когда записи есть. */}
+        {voiceCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setVoiceOnly((value) => !value)}
+            aria-pressed={voiceOnly}
+            className={`flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full border px-4 text-sm font-semibold transition-colors ${
+              voiceOnly
+                ? 'border-white bg-white text-ink'
+                : 'border-glass-border bg-white/[0.05] text-white/55'
+            }`}
+          >
+            <Mic size={14} />
+            {t.voice.filter}
+            <span className={voiceOnly ? 'text-black/45' : 'text-white/30'}>{voiceCount}</span>
+          </button>
+        )}
+
         {NOTE_TAGS.map((noteTag) => {
           const active = tagFilter === noteTag;
           return (
@@ -294,7 +321,11 @@ export default function NotesPage() {
       ) : visible.length === 0 ? (
         <EmptyState
           icon={<Sparkles size={34} />}
-          text={query.trim() || tagFilter !== 'all' ? t.notes.emptySearch : t.notes.empty}
+          text={
+            query.trim() || tagFilter !== 'all' || voiceOnly
+              ? t.notes.emptySearch
+              : t.notes.empty
+          }
         />
       ) : (
         // Столбик, а не сетка: колонку страницы уже делит DeskColumns, и

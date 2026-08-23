@@ -1,13 +1,24 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { RotateCcw, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronDown, RotateCcw, Trash2 } from 'lucide-react';
 import { useLanguage } from '@/components/LanguageProvider';
 import { AudioPlayer } from '@/components/notes/AudioPlayer';
 import { Badge } from '@/components/ui';
 import { formatDateTime } from '@/lib/date';
 import { TRASH_DAYS } from '@/hooks/useNotes';
 import type { Note } from '@/lib/types';
+
+/**
+ * Сколько знаков видно в карточке до раскрытия.
+ *
+ * Длинную мысль список превращает в стену, по которой не пробежаться
+ * глазами. Расшифровка голосового почти всегда длиннее — поэтому раскрытие
+ * живёт прямо здесь, а не только в шторке: переслушать и перечитать хочется
+ * не выходя из списка.
+ */
+const PREVIEW_CHARS = 120;
 
 export function NoteCard({
   note,
@@ -24,6 +35,9 @@ export function NoteCard({
   const { t, lang } = useLanguage();
   const edited = note.updated_at && note.updated_at !== note.created_at;
   const hasAudio = Boolean(note.audio_path && audioUrl);
+
+  const [expanded, setExpanded] = useState(false);
+  const long = note.content.length > PREVIEW_CHARS;
 
   /*
    * div с ролью кнопки, а не <button>: внутри лежит плеер со своей кнопкой,
@@ -52,11 +66,35 @@ export function NoteCard({
           выглядит сломанной. */}
       {note.content.trim() ? (
         <p className="whitespace-pre-wrap text-base leading-snug">
-          {note.content.slice(0, 120)}
-          {note.content.length > 120 ? '…' : ''}
+          {expanded || !long ? note.content : `${note.content.slice(0, PREVIEW_CHARS)}…`}
         </p>
       ) : (
-        <p className="text-base italic leading-snug text-white/30">{t.voice.untitled}</p>
+        <p className="text-base italic leading-snug text-white/30">
+          {hasAudio ? t.voice.emptyText : t.voice.untitled}
+        </p>
+      )}
+
+      {long && (
+        <button
+          type="button"
+          onClick={(e) => {
+            // Карточка по нажатию открывает заметку — раскрытие текста
+            // не должно её открывать заодно.
+            e.stopPropagation();
+            setExpanded((value) => !value);
+          }}
+          className="mt-2 flex min-h-[36px] items-center gap-1.5 text-xs font-bold text-white/45 transition-colors hover:text-white"
+        >
+          <motion.span
+            initial={false}
+            animate={{ rotate: expanded ? 180 : 0 }}
+            transition={{ duration: 0.2 }}
+            className="flex"
+          >
+            <ChevronDown size={14} />
+          </motion.span>
+          {expanded ? t.voice.hideText : t.voice.showText}
+        </button>
       )}
 
       {hasAudio && (
