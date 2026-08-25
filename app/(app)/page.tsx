@@ -149,9 +149,11 @@ export default function HomePage() {
                   работа по проекту и есть работа дня. */}
               <DailyTasks
                 tasks={app.homeTasks}
-                onAdd={(text) => void app.addTask(text)}
+                tomorrow={app.tomorrowTasks}
+                onAdd={(text, forTomorrow) => void app.addTask(text, forTomorrow)}
                 onToggle={(task) => void app.toggleHomeTask(task)}
                 onDelete={(task) => void app.deleteTask(task.id)}
+                onDeleteTomorrow={(id) => void app.deleteTask(id)}
               />
 
               <MorningCheckin

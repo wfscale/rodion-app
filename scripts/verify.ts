@@ -132,6 +132,7 @@ import {
 import { forecast, FORECAST_MIN_SENT, reachedAt, type ForecastContact } from '@/lib/forecast';
 import { assetsOf, externalHref, formatNumber, hasAssets, stagesOf } from '@/lib/project';
 import { snippetPreview, sortSnippets, totalUses } from '@/lib/snippets';
+import { instagramUrl, parseHandle, parseLeads, summarizeIntake } from '@/lib/leads';
 import {
   audioPath,
   extForMime,
@@ -1467,6 +1468,61 @@ check('дробное округляется вниз', formatDuration(9.9), '0:
 check('отрицательное не ломает', formatDuration(-5), '0:00');
 check('десять минут', formatDuration(MAX_RECORDING_SECONDS), '10:00');
 check('предупреждаем за минуту', MAX_RECORDING_SECONDS - RECORDING_WARN_SECONDS, 60);
+
+/* -------------------------------------------------------------------------- */
+section('База: разбор вставленных ссылок');
+
+// Вставляют по-разному: ссылкой из адресной строки, ссылкой с хвостом от
+// «поделиться», просто ником. Разбирать это руками — двадцать правок на
+// двадцать строк, то есть ровно та работа, от которой вставка и избавляет.
+check('полная ссылка', parseHandle('https://instagram.com/anna_psy'), 'anna_psy');
+check('без протокола', parseHandle('instagram.com/anna_psy'), 'anna_psy');
+check('www и слэш на конце', parseHandle('https://www.instagram.com/anna_psy/'), 'anna_psy');
+check('хвост от «поделиться»', parseHandle('https://instagram.com/anna_psy?igsh=abc123'), 'anna_psy');
+check('короткий домен', parseHandle('https://instagr.am/anna_psy'), 'anna_psy');
+check('ник с собакой', parseHandle('@anna_psy'), 'anna_psy');
+check('просто ник', parseHandle('anna_psy'), 'anna_psy');
+check('точки в нике сохраняются', parseHandle('anna.psy.coach'), 'anna.psy.coach');
+check('регистр приводится к нижнему', parseHandle('Anna_PSY'), 'anna_psy');
+check('кавычки и запятая из таблицы', parseHandle('"anna_psy",'), 'anna_psy');
+
+check('пустая строка', parseHandle('   '), null);
+check('чужая ссылка', parseHandle('https://t.me/anna_psy'), null);
+// Ссылка на пост — это не аккаунт, и заводить по ней лид нельзя.
+check('ссылка на пост', parseHandle('https://instagram.com/p/Cabc123'), null);
+check('ссылка на рилс', parseHandle('https://instagram.com/reel/Cabc123'), null);
+check('пробел внутри — не ник', parseHandle('анна психолог'), null);
+check('кириллица ником не бывает', parseHandle('@анна'), null);
+check('одни точки', parseHandle('...'), null);
+check('слишком длинный ник', parseHandle('a'.repeat(31)), null);
+check('ровно тридцать знаков — ок', parseHandle('a'.repeat(30)), 'a'.repeat(30));
+
+check('ссылка собирается', instagramUrl('anna_psy'), 'https://instagram.com/anna_psy');
+
+const leadDump = `
+https://instagram.com/anna_psy
+@dmitry_coach
+instagram.com/maria.psy/
+мусор строка
+https://instagram.com/anna_psy
+`;
+
+check('разобрано три лида', parseLeads(leadDump).length, 3);
+check('порядок сохраняется', parseLeads(leadDump).map((l) => l.handle), ['anna_psy', 'dmitry_coach', 'maria.psy']);
+// Повтор означал бы второе сообщение тому же человеку — худшее, что можно
+// сделать с холодной базой.
+check('дубль внутри вставки отсеивается', parseLeads('@a @a @a').length, 1);
+check(
+  'уже известные отсеиваются',
+  parseLeads(leadDump, ['https://instagram.com/anna_psy']).map((l) => l.handle),
+  ['dmitry_coach', 'maria.psy'],
+);
+check('известные сравниваются по нику, а не по строке', parseLeads('@Anna_PSY', ['anna_psy']).length, 0);
+check('список одной строкой через запятую', parseLeads('@a, @b, @c').length, 3);
+check('пустая вставка', parseLeads(''), []);
+
+check('сводка считает пропущенные', summarizeIntake(leadDump, parseLeads(leadDump)), { added: 3, skipped: 3 });
+check('сводка на пустом вводе', summarizeIntake('', []), { added: 0, skipped: 0 });
 
 /* -------------------------------------------------------------------------- */
 section('Полнота словарей');

@@ -6,12 +6,16 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { GlassCard, CardTitle } from '@/components/GlassCard';
 import { useLanguage } from '@/components/LanguageProvider';
 import type { HomeTask } from '@/components/AppProvider';
+import type { DailyTask } from '@/lib/types';
 
 type DailyTasksProps = {
   tasks: HomeTask[];
-  onAdd: (text: string) => void;
+  /** Отложенные на завтра: утром станут задачами дня сами. */
+  tomorrow: DailyTask[];
+  onAdd: (text: string, forTomorrow: boolean) => void;
   onToggle: (task: HomeTask) => void;
   onDelete: (task: HomeTask) => void;
+  onDeleteTomorrow: (id: string) => void;
 };
 
 /**
@@ -27,11 +31,27 @@ type DailyTasksProps = {
  * отсюда нельзя — пункт плана запуска не должен смахиваться одним движением
  * с рабочего экрана.
  */
-export function DailyTasks({ tasks, onAdd, onToggle, onDelete }: DailyTasksProps) {
+export function DailyTasks({
+  tasks,
+  tomorrow,
+  onAdd,
+  onToggle,
+  onDelete,
+  onDeleteTomorrow,
+}: DailyTasksProps) {
   const { t } = useLanguage();
 
   const [adding, setAdding] = useState(false);
   const [text, setText] = useState('');
+  /*
+   * Куда пишем: на сегодня или на завтра.
+   *
+   * Переключатель, а не отдельная кнопка «на завтра»: мысли приходят
+   * вечером пачкой и вперемешку — что-то надо сделать сейчас, что-то утром.
+   * Выбор остаётся между задачами, поэтому пачку можно вносить не
+   * переключаясь.
+   */
+  const [forTomorrow, setForTomorrow] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -43,7 +63,7 @@ export function DailyTasks({ tasks, onAdd, onToggle, onDelete }: DailyTasksProps
     const trimmed = text.trim();
     if (!trimmed) return;
 
-    onAdd(trimmed);
+    onAdd(trimmed, forTomorrow);
     // Поле остаётся открытым: задачи обычно вносят пачкой.
     setText('');
     inputRef.current?.focus();
@@ -87,7 +107,27 @@ export function DailyTasks({ tasks, onAdd, onToggle, onDelete }: DailyTasksProps
       )}
 
       {adding ? (
-        <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} className="flex gap-2">
+        <form onSubmit={handleSubmit} onKeyDown={handleKeyDown} className="space-y-2">
+          <div className="flex gap-1 rounded-2xl bg-white/[0.05] p-1">
+            {[
+              { value: false, label: t.home.forToday },
+              { value: true, label: t.home.forTomorrow },
+            ].map((option) => (
+              <button
+                key={String(option.value)}
+                type="button"
+                onClick={() => setForTomorrow(option.value)}
+                aria-pressed={forTomorrow === option.value}
+                className={`min-h-[36px] flex-1 rounded-xl text-sm font-bold transition-colors ${
+                  forTomorrow === option.value ? 'bg-white text-ink' : 'text-white/50'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-2">
           <input
             ref={inputRef}
             value={text}
@@ -96,8 +136,8 @@ export function DailyTasks({ tasks, onAdd, onToggle, onDelete }: DailyTasksProps
               // Пустое поле схлопываем — иначе висит открытым весь день.
               if (!text.trim()) setAdding(false);
             }}
-            placeholder={t.home.taskPh}
-            aria-label={t.home.taskPh}
+            placeholder={forTomorrow ? t.home.taskTomorrowPh : t.home.taskPh}
+            aria-label={forTomorrow ? t.home.taskTomorrowPh : t.home.taskPh}
             autoComplete="off"
             enterKeyHint="done"
             className="field"
@@ -110,6 +150,7 @@ export function DailyTasks({ tasks, onAdd, onToggle, onDelete }: DailyTasksProps
           >
             <Plus size={20} strokeWidth={2.6} />
           </button>
+          </div>
         </form>
       ) : (
         <button
@@ -119,6 +160,35 @@ export function DailyTasks({ tasks, onAdd, onToggle, onDelete }: DailyTasksProps
         >
           {t.home.addTask}
         </button>
+      )}
+
+      {/* Отложенное видно в тот же вечер, когда записал: иначе непонятно,
+          сохранилось оно вообще или нет. Отмечать его нельзя — оно ещё не
+          наступило; можно только убрать, если передумал. */}
+      {tomorrow.length > 0 && (
+        <div className="mt-3 border-t border-divider pt-3">
+          <p className="section-label mb-2">{t.home.tomorrowTitle}</p>
+
+          <ul className="space-y-0.5">
+            {tomorrow.map((task) => (
+              <li key={task.id} className="flex items-center gap-1">
+                <span className="min-h-[36px] min-w-0 flex-1 py-1.5 text-sm leading-snug text-white/55">
+                  {task.text}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onDeleteTomorrow(task.id)}
+                  aria-label={t.common.delete}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/25 transition-colors hover:bg-white/10 hover:text-danger"
+                >
+                  <X size={15} />
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <p className="mt-2 text-xs text-white/25">{t.home.tomorrowHint}</p>
+        </div>
       )}
     </GlassCard>
   );

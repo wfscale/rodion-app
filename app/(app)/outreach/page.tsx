@@ -18,6 +18,9 @@ import { ConversationSheet } from '@/components/outreach/ConversationSheet';
 import { DialogueCard } from '@/components/outreach/DialogueCard';
 import { FollowUpList } from '@/components/outreach/FollowUpList';
 import { FunnelChart, type FunnelTarget } from '@/components/outreach/FunnelChart';
+import { LeadIntake } from '@/components/outreach/LeadIntake';
+import { LeadList } from '@/components/outreach/LeadList';
+import { OfferPanel } from '@/components/outreach/OfferPanel';
 import { HourlyCard } from '@/components/outreach/HourlyCard';
 import { NicheAnalytics } from '@/components/outreach/NicheAnalytics';
 import { OutreachFilters } from '@/components/outreach/OutreachFilters';
@@ -34,6 +37,7 @@ import {
   Segmented,
 } from '@/components/ui';
 import { useOffers } from '@/hooks/useOffers';
+import { useSnippets } from '@/hooks/useSnippets';
 import {
   applyOutreachFilters,
   EMPTY_FILTERS,
@@ -42,6 +46,7 @@ import {
 } from '@/lib/outreach-filter';
 import {
   CALL_STATUSES,
+  normalizeStatus,
   REPLIED_STATUSES,
   SENT_STATUSES,
   type ContactStatus,
@@ -50,7 +55,7 @@ import {
 } from '@/lib/types';
 import { FEATURE_LEVEL } from '@/lib/xp';
 
-type Tab = 'contacts' | 'offers';
+type Tab = 'leads' | 'contacts' | 'offers';
 type ViewMode = 'cards' | 'table';
 
 /** По сколько строк подгружается список при нажатии «показать ещё». */
@@ -62,6 +67,12 @@ export default function OutreachPage() {
   const offersApi = useOffers();
 
   const [tab, setTab] = useState<Tab>('contacts');
+  const snippets = useSnippets();
+  /*
+   * Выбранный оффер живёт на странице, а не в панели: копируют его и из
+   * панели, и из каждой строки базы, и это обязан быть один и тот же текст.
+   */
+  const [offerId, setOfferId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [view, setView] = useState<ViewMode>('cards');
@@ -90,6 +101,8 @@ export default function OutreachPage() {
 
   /* ------------------------------------------------------------------ */
 
+  // Воронка считает только написанных: собранная база — это ещё не рассылка,
+  // и попадать в «Отправлено» она не должна.
   const stats = useMemo(() => {
     const contacts = app.contacts;
     return {
@@ -100,15 +113,51 @@ export default function OutreachPage() {
     };
   }, [app.contacts]);
 
+  /**
+   * База — контакты со статусом «ещё не написал».
+   *
+   * Отдельной таблицы у неё нет: статус not_sent был в шкале с самого
+   * начала, и человек уходит из базы в общий список ровно тем, что ему
+   * написали. Никакого переноса строк между сущностями.
+   */
+  const leads = useMemo(
+    () => app.contacts.filter((c) => normalizeStatus(c.status) === 'not_sent'),
+    [app.contacts],
+  );
+
+  /** Написанные: всё, что уже дошло до адресата. Базы здесь быть не должно. */
+  const written = useMemo(
+    () => app.contacts.filter((c) => normalizeStatus(c.status) !== 'not_sent'),
+    [app.contacts],
+  );
+
+  /** Ники, которые уже заведены: по ним отсеиваются повторы при вставке. */
+  const knownHandles = useMemo(
+    () =>
+      app.contacts
+        .map((c) => c.instagram_url || c.name)
+        .filter((value): value is string => Boolean(value)),
+    [app.contacts],
+  );
+
+  /** Список отсортирован по частоте — по умолчанию берём самый рабочий. */
+  const activeOffer = useMemo(
+    () =>
+      snippets.snippets.find((snippet) => snippet.id === offerId) ??
+      snippets.snippets[0] ??
+      null,
+    [snippets.snippets, offerId],
+  );
+
   const visible = useMemo(
     () =>
       applyOutreachFilters({
-        contacts: app.contacts,
+        contacts: written,
         query,
         filters,
         today: app.today,
       }),
-    [app.contacts, query, filters, app.today],
+    [written, query, filters, app.today],
   );
 
   const niches = useMemo(() => nicheOptions(app.contacts), [app.contacts]);
@@ -220,7 +269,7 @@ export default function OutreachPage() {
 
       {/* Цена события в рассылках: воронка говорит «сколько уже»,
           эта карточка — «сколько ещё». */}
-      <ForecastCard contacts={app.contacts} delay={4} />
+      <ForecastCard contacts={written} delay={4} />
 
       {/*
         Страховка серии — под цифрами дня. Решение «сегодня не вытяну»
@@ -240,16 +289,16 @@ export default function OutreachPage() {
       />
 
       {canNiches ? (
-        <NicheAnalytics contacts={app.contacts} />
+        <NicheAnalytics contacts={written} />
       ) : (
         <LockedFeature featureKey="niches" requiredLevel={FEATURE_LEVEL.niches} />
       )}
 
       {canPrime && (
-        <PrimeList contacts={app.contacts} today={app.today} onOpen={openForContact} />
+        <PrimeList contacts={written} today={app.today} onOpen={openForContact} />
       )}
 
-      {canHourly && <HourlyCard contacts={app.contacts} />}
+      {canHourly && <HourlyCard contacts={written} />}
     </>
   );
 
@@ -388,6 +437,61 @@ export default function OutreachPage() {
     </>
   );
 
+  /*
+   * База: слева сбор и сам список, справа оффер.
+   *
+   * Оффер справа и липкий — по базе идут сверху вниз, а текст нужен на
+   * каждом человеке. Раньше за ним уходили на страницу заметок и обратно,
+   * то есть двадцать переходов туда и двадцать назад за один заход.
+   */
+  const leadsTab = (
+    <DeskColumns
+      stickySide
+      main={
+        <>
+          <LeadIntake known={knownHandles} onAdd={app.addLeads} />
+          <LeadList
+            leads={leads}
+            offer={activeOffer}
+            onPatch={(id, patch) => void app.updateContact(id, patch)}
+            onSent={(lead) => void app.markSent(lead)}
+            onDrop={(id) => void app.deleteContact(id)}
+            onUseOffer={() => activeOffer && void snippets.use(activeOffer.id)}
+            delay={1}
+          />
+        </>
+      }
+      side={
+        <>
+          {/* Квота видна и здесь: писать начинают именно отсюда. */}
+          <GlassCard delay={2}>
+            <div className="mb-2 flex items-baseline justify-between gap-3">
+              <p className="text-sm font-bold">
+                {t.common.today}{' '}
+                <span className={app.quota.closed ? 'text-success' : 'text-white'}>
+                  {app.quota.sent}
+                </span>
+                <span className="text-white/35"> / {app.quota.quota}</span>
+              </p>
+              <span className="text-xs text-white/35">
+                {t.home.record}: {app.quota.record}
+              </span>
+            </div>
+            <PulseBar pct={app.quota.pct} color={app.quota.closed ? '#64FF8C' : '#FFFFFF'} />
+          </GlassCard>
+
+          <OfferPanel
+            snippets={snippets.snippets}
+            active={activeOffer}
+            onPick={setOfferId}
+            onUse={(id) => void snippets.use(id)}
+            delay={3}
+          />
+        </>
+      }
+    />
+  );
+
   return (
     <div
       /* В полноэкранном режиме контент всё равно держим в рамках: таблица
@@ -404,6 +508,7 @@ export default function OutreachPage() {
       <div className="flex rounded-2xl bg-white/[0.05] p-1">
         {(
           [
+            { key: 'leads', label: leads.length > 0 ? `${t.leads.tab} · ${leads.length}` : t.leads.tab },
             { key: 'contacts', label: t.outreach.tabContacts },
             { key: 'offers', label: t.outreach.tabOffers },
           ] as const
@@ -431,7 +536,9 @@ export default function OutreachPage() {
         ))}
       </div>
 
-      {tab === 'contacts' ? (
+      {tab === 'leads' ? (
+        leadsTab
+      ) : tab === 'contacts' ? (
         <>
           {/*
             Кнопка стоит НАД колонками, а не внутри левой: добавить рассылку —
@@ -483,7 +590,7 @@ export default function OutreachPage() {
           {/* Разбор текстов офферов убран: им не пользовались, а признаки
               вроде «есть цифры» ничего не решали. Осталось то, что реально
               ломает сделки, — молчание в переписке после ответа. */}
-          {app.conversationsReady && <DialogueCard contacts={app.contacts} />}
+          {app.conversationsReady && <DialogueCard contacts={written} />}
 
           {visibleOffers.length === 0 ? (
             <EmptyState text={t.offers.empty} />

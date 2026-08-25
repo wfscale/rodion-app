@@ -118,7 +118,12 @@ export const en: Dict = {
 
     tasksTitle: 'TASKS FOR TODAY',
     taskPh: 'What needs doing today?',
-    addTask: '+ add task',
+    taskTomorrowPh: 'What to do tomorrow?',
+    addTask: '+ add a task',
+    forToday: 'Today',
+    forTomorrow: 'Tomorrow',
+    tomorrowTitle: 'FOR TOMORROW',
+    tomorrowHint: 'They become today\u2019s tasks on their own in the morning.',
 
     habitsTitle: 'The basics are hygiene, not results.',
 
@@ -307,6 +312,44 @@ export const en: Dict = {
     toastRecord: '⚡ Record! {n} messages — your new maximum.',
     toastMilestone: '🏁 {n} messages all time.',
     toastRepliedNo: 'You got a reply. The offer lands — keep refining.',
+  },
+
+  leads: {
+    tab: 'Leads',
+    title: 'Collect the list',
+    hint: 'Paste profile links — one per line or comma separated.',
+    ph: 'https://instagram.com/name\n@name\ninstagram.com/name',
+    niche: 'Niche',
+    nichePh: 'Psychology',
+    add: 'Add {n}',
+    addEmpty: 'Add',
+    parsed: 'Parsed: {n}',
+    skipped: '{n} skipped',
+    duplicates: 'Repeats and already contacted are dropped automatically.',
+    added: 'Added to the list: {n}',
+    nothing: 'Nothing parsed. Instagram links or handles are needed.',
+
+    listTitle: 'In progress',
+    count: '{n} in the list',
+    empty: 'The list is empty. Collect accounts and go through them in one pass.',
+    emptyHint: 'That way you never switch between searching and writing.',
+
+    openProfile: 'Open profile',
+    telegram: 'Telegram',
+    telegramPh: 'handle without @',
+    openTelegram: 'Open in Telegram',
+    audience: 'Followers',
+    audiencePh: '12k',
+    sent: 'Sent',
+    drop: 'No DM',
+    dropHint: 'Remove from the list',
+
+    offerTitle: 'Offer',
+    offerEmpty: 'No snippets yet. Add an offer in notes and it shows up here.',
+    offerPick: 'Switch',
+    copy: 'Copy the offer',
+    copied: 'Copied',
+    copyFailed: 'Could not copy',
   },
 
   followup: {

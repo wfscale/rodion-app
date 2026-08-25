@@ -280,9 +280,14 @@ export default function PreviewPage() {
 
         <DailyTasks
           tasks={TASKS}
+          tomorrow={[
+            { id: 'tm1', user_id: 'u', date: '2026-08-14', text: 'Собрать базу по психологам', completed: false, created_at: '' },
+            { id: 'tm2', user_id: 'u', date: '2026-08-14', text: 'Дожать Яну по договору', completed: false, created_at: '' },
+          ]}
           onAdd={() => undefined}
           onToggle={() => undefined}
           onDelete={() => undefined}
+          onDeleteTomorrow={() => undefined}
         />
 
         <HabitsBlock done={done} onToggle={(id) => setDone((p) => ({ ...p, [id]: !p[id] }))} />
