@@ -160,6 +160,10 @@ type AppContextValue = {
   can: (feature: FeatureKey) => boolean;
 
   addContact: (draft: ContactDraft) => Promise<OutreachContact | null>;
+  /** Завести пачку найденных аккаунтов в базу. Возвращает, сколько добавилось. */
+  addLeads: (leads: { name: string; instagram_url: string }[], niche: string) => Promise<number>;
+  /** Написали человеку из базы: рассылка ушла со всеми последствиями. */
+  markSent: (contact: OutreachContact) => Promise<void>;
   updateContact: (id: string, patch: Partial<OutreachContact>) => Promise<void>;
   setStatus: (contact: OutreachContact, status: ContactStatus) => Promise<void>;
   deleteContact: (id: string) => Promise<void>;
@@ -170,7 +174,10 @@ type AppContextValue = {
   /** Сохранить переписку целиком. */
   saveConversation: (id: string, messages: ChatMessage[]) => Promise<void>;
 
-  addTask: (text: string) => Promise<void>;
+  /** Задачи, отложенные на завтра. Утром они сами станут задачами дня. */
+  tomorrowTasks: DailyTask[];
+
+  addTask: (text: string, forTomorrow?: boolean) => Promise<void>;
   toggleTask: (id: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   /** Отметить любую задачу списка дня — свою или проектную. */
@@ -359,11 +366,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .gte('created_at', dayStart)
         .order('created_at', { ascending: false })
         .limit(40),
+      // Сегодня и завтра сразу: задачу на завтра ставят вечером, и она
+      // обязана быть видна в тот же вечер — иначе непонятно, записалась ли.
       supabase
         .from('daily_tasks')
         .select('*')
         .eq('user_id', currentUser.id)
-        .eq('date', logicalToday)
+        .in('date', [logicalToday, shiftDate(logicalToday, 1)])
         .order('created_at', { ascending: true }),
       supabase
         .from('daily_logs')
@@ -578,10 +587,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /*  Производные значения                                               */
   /* ------------------------------------------------------------------ */
 
-  /** Рассылки за сегодня: считаем по дате касания, а не по created_at —
-   *  дату можно поставить задним числом, и счётчик должен это уважать. */
+  /**
+   * Рассылки за сегодня.
+   *
+   * Считаем по дате касания, а не по created_at: дату можно поставить задним
+   * числом, и счётчик должен это уважать. И только по дошедшим статусам —
+   * человек, найденный в базу, но ещё не написанный, рассылкой не является,
+   * иначе вечерний сбор базы закрывал бы дневную квоту сам собой.
+   */
   const sentToday = useMemo(
-    () => contacts.filter((c) => c.first_contact_date === today).length,
+    () =>
+      contacts.filter(
+        (c) => c.first_contact_date === today && SENT_STATUSES.includes(normalizeStatus(c.status)),
+      ).length,
     [contacts, today],
   );
 
@@ -600,6 +618,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [profile?.current_quota, profile?.quota_streak, profile?.daily_record, sentToday]);
 
+  /** Завтрашняя логическая дата: на неё складываются задачи, записанные с вечера. */
+  const tomorrow = useMemo(() => shiftDate(today, 1), [today]);
+
+  /**
+   * Задачи, отложенные на завтра.
+   *
+   * Мысль «завтра надо сделать вот это» приходит вечером, а к утру её уже
+   * нет. Записать её в список сегодняшнего дня нельзя: она замусорит то, что
+   * ещё не сделано сегодня, и потеряется среди него.
+   */
+  const tomorrowTasks = useMemo(
+    () => tasks.filter((task) => task.date === tomorrow),
+    [tasks, tomorrow],
+  );
+
   /**
    * Список дня целиком.
    *
@@ -609,7 +642,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
    */
   const homeTasks = useMemo<HomeTask[]>(
     () => [
-      ...tasks.map((task) => ({
+      ...tasks.filter((task) => task.date === today).map((task) => ({
         id: task.id,
         text: task.text,
         completed: task.completed,
@@ -624,13 +657,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         project: task.project,
       })),
     ],
-    [tasks, projectTasks],
+    [tasks, projectTasks, today],
   );
 
-  /** Сколько рассылок пришлось на каждую дату — вход для разбора дней. */
+  /**
+   * Сколько рассылок пришлось на каждую дату — вход для разбора дней.
+   *
+   * Собранная база сюда не попадает по той же причине, что и в счётчик дня:
+   * иначе щит на границе суток решил бы, что день закрыт, хотя не написано
+   * ни одного сообщения.
+   */
   const sentByDate = useMemo(() => {
     const map: Record<string, number> = {};
     for (const contact of contacts) {
+      if (!SENT_STATUSES.includes(normalizeStatus(contact.status))) continue;
       const date = contact.first_contact_date;
       if (date) map[date] = (map[date] ?? 0) + 1;
     }
@@ -939,6 +979,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /*  Контакты                                                           */
   /* ------------------------------------------------------------------ */
 
+  /**
+   * Всё, что происходит от одной ушедшей рассылки.
+   *
+   * Вынесено из addContact, потому что входов стало два: рассылку заводят
+   * сразу отправленной, а могут написать человеку из базы. Событие при этом
+   * одно и то же, и разъехавшиеся награды за два входа — верный способ
+   * получить квоту, которая считает не то.
+   */
+  const celebrateOutreach = useCallback(async () => {
+    const sentAfter = sentToday + 1;
+
+    await runEvents(
+      onOutreachAdded({
+        sentToday: sentAfter,
+        quota: quota.quota,
+        record: quota.record,
+        date: today,
+        awardedBonusSteps: [],
+        // sentTotal посчитан до изменения — это и есть «было до».
+        totalBefore: sentTotal,
+        doubleXp: unlocked('doubleXp', levelInfo.level),
+      }),
+    );
+
+    // Цепочка дней с хотя бы одной рассылкой.
+    if (profile && profile.chain_last_date !== today) {
+      const chain = rollChain({
+        chainDays: profile.chain_days ?? 0,
+        chainLastDate: profile.chain_last_date,
+        today,
+      });
+      await updateProfile({ chain_days: chain, chain_last_date: today });
+    }
+
+    /*
+     * Закрытая квота сильнее щита: день засчитан работой, заряд ни за что
+     * не потрачен и возвращается в запас сразу — ждать границы суток
+     * незачем, вопрос уже решён.
+     *
+     * Привал так не снимается: в него входят осознанно и выходят кнопкой.
+     * Приложение, которое само отменяет выбранный человеком режим,
+     * перестаёт быть предсказуемым.
+     */
+    if (shieldReady && profile && profile.shield_date === today && sentAfter >= quota.quota) {
+      await updateProfile({
+        shield_charges: Math.min(SHIELD_MAX, (profile.shield_charges ?? 0) + 1),
+        shield_date: null,
+      });
+      showToast(`🛡 ${t.guard.toastRefund}`, 'round', 3400);
+    }
+  }, [
+    sentToday, sentTotal, quota.quota, quota.record, today, levelInfo.level,
+    runEvents, profile, updateProfile, shieldReady, showToast, t.guard.toastRefund,
+  ]);
+
   const addContact = useCallback(
     async (draft: ContactDraft): Promise<OutreachContact | null> => {
       if (!user) return null;
@@ -985,62 +1080,102 @@ export function AppProvider({ children }: { children: ReactNode }) {
         } as never);
       }
 
-      // Счётчик считает контакты за сегодня — новый учитываем сразу.
-      const sentAfter =
-        contact.first_contact_date === today ? sentToday + 1 : sentToday;
-
       await logActivity('sent', { name: contact.name, niche: contact.niche });
 
-      if (contact.first_contact_date === today) {
-        await runEvents(
-          onOutreachAdded({
-            sentToday: sentAfter,
-            quota: quota.quota,
-            record: quota.record,
-            date: today,
-            awardedBonusSteps: [],
-            // sentTotal посчитан до вставки — это и есть «было до».
-            totalBefore: sentTotal,
-            doubleXp: unlocked('doubleXp', levelInfo.level),
-          }),
-        );
-
-        // Цепочка дней с хотя бы одной рассылкой.
-        if (profile && profile.chain_last_date !== today) {
-          const chain = rollChain({
-            chainDays: profile.chain_days ?? 0,
-            chainLastDate: profile.chain_last_date,
-            today,
-          });
-          await updateProfile({ chain_days: chain, chain_last_date: today });
-        }
-
-        /*
-         * Закрытая квота сильнее щита: день засчитан работой, заряд ни за
-         * что не потрачен и возвращается в запас сразу — ждать границы
-         * суток незачем, вопрос уже решён.
-         *
-         * Привал так не снимается: в него входят осознанно и выходят
-         * кнопкой. Приложение, которое само отменяет выбранный человеком
-         * режим, перестаёт быть предсказуемым.
-         */
-        if (shieldReady && profile && profile.shield_date === today && sentAfter >= quota.quota) {
-          await updateProfile({
-            shield_charges: Math.min(SHIELD_MAX, (profile.shield_charges ?? 0) + 1),
-            shield_date: null,
-          });
-          showToast(`🛡 ${t.guard.toastRefund}`, 'round', 3400);
-        }
+      // Собранный в базу человек рассылкой ещё не является: ни XP, ни квоты,
+      // ни цепочки. Всё это случится, когда ему действительно напишут.
+      if (contact.first_contact_date === today && SENT_STATUSES.includes(contact.status)) {
+        await celebrateOutreach();
       }
 
       void syncSheets();
       return contact;
     },
-    [
-      supabase, user, today, sentToday, sentTotal, quota.quota, quota.record, levelInfo.level,
-      logActivity, runEvents, profile, updateProfile, shieldReady, showToast,
-      t.guard.toastRefund,
-    ],
+    [supabase, user, today, logActivity, celebrateOutreach],
+  );
+
+  /**
+   * Завести сразу пачку найденных аккаунтов.
+   *
+   * Одним запросом, а не по одному: двадцать вставок подряд — это двадцать
+   * оборотов до сервера и полминуты ожидания на том шаге, который должен
+   * занимать секунду.
+   */
+  const addLeads = useCallback(
+    async (leads: { name: string; instagram_url: string }[], niche: string): Promise<number> => {
+      if (!user || leads.length === 0) return 0;
+
+      const nowIso = new Date().toISOString();
+      const { data, error: insertError } = await supabase
+        .from('outreach_contacts')
+        .insert(
+          leads.map((lead) => ({
+            user_id: user.id,
+            name: lead.name,
+            niche: niche.trim() || null,
+            instagram_url: lead.instagram_url,
+            status: 'not_sent' as const,
+            first_contact_date: today,
+            status_history: [{ status: 'not_sent', at: nowIso }],
+          })) as never,
+        )
+        .select('*');
+
+      if (insertError) {
+        setError(humanError(insertError.message));
+        return 0;
+      }
+
+      const added = ((data as OutreachContact[]) ?? []).map((row) => ({
+        ...row,
+        status: normalizeStatus(row.status),
+        conversation: parseMessages(row.conversation),
+      }));
+
+      setContacts((previous) => [...added, ...previous]);
+      void syncSheets();
+      return added.length;
+    },
+    [supabase, user, today],
+  );
+
+  /**
+   * Написали человеку из базы.
+   *
+   * Это то же событие, что и «завёл рассылку» — просто вход другой, поэтому
+   * и каскад тот же: XP, квота, цепочка, ровное число, вехи. Дата касания
+   * переставляется на сегодня: важен день, когда сообщение ушло, а не день,
+   * когда аккаунт нашёлся.
+   */
+  const markSent = useCallback(
+    async (contact: OutreachContact) => {
+      const nowIso = new Date().toISOString();
+      const patch: Partial<OutreachContact> = {
+        status: 'sent',
+        first_contact_date: today,
+        status_history: [...(contact.status_history ?? []), { status: 'sent', at: nowIso }],
+      };
+
+      setContacts((previous) =>
+        previous.map((c) => (c.id === contact.id ? { ...c, ...patch } : c)),
+      );
+
+      const { error: updateError } = await supabase
+        .from('outreach_contacts')
+        .update(patch as never)
+        .eq('id', contact.id);
+
+      if (updateError) {
+        setError(humanError(updateError.message));
+        return;
+      }
+
+      await logActivity('sent', { name: contact.name, niche: contact.niche });
+      await celebrateOutreach();
+
+      void syncSheets();
+    },
+    [supabase, today, logActivity, celebrateOutreach],
   );
 
   const setStatus = useCallback(
@@ -1195,12 +1330,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /*  Задачи дня                                                         */
   /* ------------------------------------------------------------------ */
 
+  /**
+   * Новая задача. forTomorrow откладывает её на следующий логический день.
+   *
+   * Дата — единственное отличие: завтрашняя задача становится обычной сама
+   * собой в 4 утра, когда логический день сменится. Никакого переноса и
+   * никакого фонового задания для этого не нужно.
+   */
   const addTask = useCallback(
-    async (text: string) => {
+    async (text: string, forTomorrow = false) => {
       if (!user || !text.trim()) return;
       const { data } = await supabase
         .from('daily_tasks')
-        .insert({ user_id: user.id, date: today, text: text.trim() })
+        .insert({
+          user_id: user.id,
+          date: forTomorrow ? shiftDate(today, 1) : today,
+          text: text.trim(),
+        })
         .select('*')
         .single();
       if (data) setTasks((previous) => [...previous, data as DailyTask]);
@@ -1469,6 +1615,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       activity,
       tasks,
       homeTasks,
+      tomorrowTasks,
       logs,
       todayLog,
       reminders,
@@ -1483,6 +1630,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sentTotal,
       can,
       addContact,
+      addLeads,
+      markSent,
       updateContact,
       setStatus,
       deleteContact,
@@ -1511,10 +1660,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       signOut,
     }),
     [
-      user, profile, today, now, loading, error, contacts, activity, tasks, homeTasks, logs, todayLog,
+      user, profile, today, now, loading, error, contacts, activity, tasks, homeTasks,
+      tomorrowTasks, logs, todayLog,
       reminders, remindersReady, remindersDue, conversationsReady,
       quota, guard, levelInfo, cycleDayNumber, sentTotal, can,
-      addContact, updateContact, setStatus, deleteContact, touchContact, muteContact,
+      addContact, addLeads, markSent, updateContact, setStatus, deleteContact, touchContact, muteContact,
       saveConversation,
       addTask, toggleTask, deleteTask, toggleHomeTask, reloadProjectTasks,
       addReminder, updateReminder, toggleReminder, deleteReminder,
