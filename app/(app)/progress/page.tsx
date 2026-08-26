@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/components/AppProvider';
 import { CardTitle, GlassCard } from '@/components/GlassCard';
 import { useLanguage } from '@/components/LanguageProvider';
+import { GoalsSection } from '@/components/goals/GoalsSection';
 import { LockedFeature } from '@/components/LockedFeature';
 import { EveningCheckin } from '@/components/mode/EveningCheckin';
 import { ModeBlock } from '@/components/mode/ModeBlock';
@@ -20,6 +21,7 @@ import { XpBar } from '@/components/XpBar';
 import { getLogicalDate, shiftDate } from '@/lib/date';
 import { dailySeries, funnelTotals, overdueTouchCount, spanDays, xpSeries } from '@/lib/insights';
 import { needsEveningCheckin } from '@/lib/mode';
+import { useGoalMath, useGoals } from '@/hooks/useGoals';
 import { missingWeeks, statsForWeek } from '@/lib/reports';
 import { SHIELD_MAX } from '@/lib/shield';
 import { createClient } from '@/lib/supabase/client';
@@ -41,6 +43,8 @@ const ALL_TIME_CAP = 365;
 export default function ProgressPage() {
   const { t, tf, days } = useLanguage();
   const app = useApp();
+  const goals = useGoals();
+  const rublesPerOutreach = useGoalMath();
 
   const [transactions, setTransactions] = useState<XpTransaction[]>([]);
   const [reports, setReports] = useState<WeeklyReport[]>([]);
@@ -162,6 +166,20 @@ export default function ProgressPage() {
       <DeskColumns
         main={
           <>
+          {/* Цели — первыми: на страницу прогресса заходят за ответом «куда
+              я иду», и уровень с графиком отвечают на него куда слабее. */}
+          <GoalsSection
+            goals={goals.goals}
+            ready={goals.ready}
+            today={app.today}
+            rublesPer={rublesPerOutreach}
+            onSave={(draft, id) => void goals.save(draft, id)}
+            onAddAmount={(id, amount) => void goals.addAmount(id, amount)}
+            onPin={(id) => void goals.pin(id)}
+            onDone={(id, done) => void goals.setDone(id, done)}
+            onDelete={(id) => void goals.remove(id)}
+          />
+
           {/* Уровень: текущий и тизер следующего. Полная лестница — ниже,
               и в ней всё равно видно только текущий блок из трёх ступеней. */}
           <GlassCard>

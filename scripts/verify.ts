@@ -98,6 +98,7 @@ import {
   daysBetween,
   formatTimeLeft,
   getLogicalDate,
+  formatDateSmart,
   minutesUntilDayEnd,
   shiftDate,
   weekDates,
@@ -133,6 +134,21 @@ import { forecast, FORECAST_MIN_SENT, reachedAt, type ForecastContact } from '@/
 import { assetsOf, externalHref, formatNumber, hasAssets, stagesOf } from '@/lib/project';
 import { snippetPreview, sortSnippets, totalUses } from '@/lib/snippets';
 import { instagramUrl, parseHandle, parseLeads, summarizeIntake } from '@/lib/leads';
+import {
+  actualPace,
+  daysLeft,
+  daysPassed,
+  goalProgress,
+  goalState,
+  outreachesPerDay,
+  outreachesToGoal,
+  projectedDate,
+  remaining,
+  requiredPace,
+  rublesPerOutreach,
+  slackDays,
+  sortGoals,
+} from '@/lib/goals';
 import {
   audioPath,
   extForMime,
@@ -1523,6 +1539,107 @@ check('пустая вставка', parseLeads(''), []);
 
 check('сводка считает пропущенные', summarizeIntake(leadDump, parseLeads(leadDump)), { added: 3, skipped: 3 });
 check('сводка на пустом вводе', summarizeIntake('', []), { added: 0, skipped: 0 });
+
+/* -------------------------------------------------------------------------- */
+section('Цели: срок, темп, перевод в рассылки');
+
+const goal = (over: Partial<Parameters<typeof goalProgress>[0]> = {}) => ({
+  target_amount: 30000 as number | null,
+  current_amount: 0,
+  deadline: '2026-09-13',
+  started_at: '2026-08-14',
+  done: false,
+  ...over,
+});
+
+const TODAY = '2026-08-23';
+
+check('до срока три недели', daysLeft('2026-09-13', TODAY), 21);
+check('срок вышел вчера', daysLeft('2026-08-22', TODAY), -1);
+check('день старта уже день', daysPassed('2026-08-23', TODAY), 1);
+check('десятый день работы', daysPassed('2026-08-14', TODAY), 10);
+
+check('прогресс пустой цели', goalProgress(goal()), 0);
+check('прогресс наполовину', goalProgress(goal({ current_amount: 15000 })), 50);
+check('перебор не даёт больше ста', goalProgress(goal({ current_amount: 45000 })), 100);
+check('закрытая цель — сто', goalProgress(goal({ done: true })), 100);
+// Цель без суммы либо сделана, либо нет: середины у неё не бывает.
+check('цель без суммы до закрытия', goalProgress(goal({ target_amount: null })), 0);
+check('цель без суммы закрыта', goalProgress(goal({ target_amount: null, done: true })), 100);
+
+check('остаток', remaining(goal({ current_amount: 12400 })), 17600);
+check('остатка нет', remaining(goal({ current_amount: 30000 })), 0);
+check('перебор не даёт отрицательного', remaining(goal({ current_amount: 45000 })), 0);
+check('у цели без суммы остатка нет', remaining(goal({ target_amount: null })), 0);
+
+// Дневное число можно перебить сегодня; остаток перебить нельзя, его можно
+// только не успеть — в этом вся разница между темпом и счётчиком долга.
+check('нужный темп', requiredPace(goal({ current_amount: 12400 }), TODAY), 839);
+check('темп набранной цели — ноль', requiredPace(goal({ current_amount: 30000 }), TODAY), 0);
+check(
+  'срок вышел — нужен весь остаток',
+  requiredPace(goal({ current_amount: 10000, deadline: '2026-08-20' }), TODAY),
+  20000,
+);
+
+check('фактический темп', actualPace(goal({ current_amount: 12000 }), TODAY), 1200);
+check('без поступлений темпа нет', actualPace(goal(), TODAY), 0);
+
+check('прогноз при текущем темпе', projectedDate(goal({ current_amount: 12000 }), TODAY), '2026-09-07');
+check('без темпа прогноза нет', projectedDate(goal(), TODAY), null);
+check('набранная цель — сегодня', projectedDate(goal({ current_amount: 30000 }), TODAY), TODAY);
+
+// Нулевой прогресс в первый же день — это не отставание, а ещё не начатая
+// работа. Назвать её отставанием значит добиться, чтобы на цель не смотрели.
+check('работа ещё не началась', goalState(goal(), TODAY), 'fresh');
+check('идёшь с опережением', goalState(goal({ current_amount: 20000 }), TODAY), 'ahead');
+check('отстаёшь', goalState(goal({ current_amount: 3000 }), TODAY), 'behind');
+check('закрытая цель', goalState(goal({ done: true }), TODAY), 'done');
+check('срок вышел', goalState(goal({ deadline: '2026-08-20' }), TODAY), 'overdue');
+check('цель без суммы просто идёт', goalState(goal({ target_amount: null }), TODAY), 'ontrack');
+
+// 20 000 за 10 дней — это 2000 в день, остаток 10 000 закрывается за пять
+// дней, то есть 28 августа против срока 13 сентября: шестнадцать дней запаса.
+check('запас в днях', slackDays(goal({ current_amount: 20000 }), TODAY), 16);
+check('отставание в днях', (slackDays(goal({ current_amount: 3000 }), TODAY) ?? 0) < 0, true);
+
+// Врать выдуманным средним нельзя: на это число смотрят каждый день.
+check('рублей на рассылку', rublesPerOutreach(150000, 70), 150000 / 70);
+check('без чека не считаем', rublesPerOutreach(0, 70), null);
+check('без закрытий не считаем', rublesPerOutreach(150000, 0), null);
+
+check('рассылок до цели', outreachesToGoal(goal({ current_amount: 12400 }), 150000 / 70), 9);
+check('цель набрана — рассылок ноль', outreachesToGoal(goal({ current_amount: 30000 }), 2000), 0);
+check('без цены рассылки — нечего сказать', outreachesToGoal(goal(), null), null);
+check('рассылок в день', outreachesPerDay(goal({ current_amount: 12400 }), 150000 / 70, TODAY), 1);
+check(
+  'большая цель считается в рассылках',
+  outreachesToGoal(goal({ target_amount: 500000, current_amount: 0 }), 150000 / 70),
+  234,
+);
+
+// Прогноз по цели уезжает на год вперёд, и «16 июн.» без года читается как
+// ближайший июнь — то есть ровно наоборот тому, что произошло.
+check('в этом году год не пишем', formatDateSmart('2026-09-13', '2026-08-23', 'ru'), '13 сент.');
+check('в другом году пишем', formatDateSmart('2027-06-16', '2026-08-23', 'ru'), '16 июн. 2027');
+
+const goals = [
+  { deadline: '2026-11-01', done: false },
+  { deadline: '2026-09-13', done: false },
+  { deadline: '2026-08-01', done: true },
+  { deadline: '2026-10-01', done: false },
+];
+check('незакрытые по сроку, закрытые в конец', sortGoals(goals).map((g) => g.deadline), [
+  '2026-09-13',
+  '2026-10-01',
+  '2026-11-01',
+  '2026-08-01',
+]);
+check('исходный список не меняется', (() => {
+  const list = [{ deadline: '2026-11-01', done: false }, { deadline: '2026-09-13', done: false }];
+  sortGoals(list);
+  return list[0].deadline;
+})(), '2026-11-01');
 
 /* -------------------------------------------------------------------------- */
 section('Полнота словарей');

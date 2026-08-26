@@ -5,6 +5,7 @@ import { ChevronDown, Maximize2, Minimize2, Plus, Search, X } from 'lucide-react
 import { useMemo, useState } from 'react';
 import { useApp } from '@/components/AppProvider';
 import { GlassCard } from '@/components/GlassCard';
+import { GoalStrip } from '@/components/goals/GoalStrip';
 import { ShieldCard } from '@/components/guard/ShieldCard';
 import { useLanguage } from '@/components/LanguageProvider';
 import { LockedFeature } from '@/components/LockedFeature';
@@ -38,6 +39,7 @@ import {
 } from '@/components/ui';
 import { useOffers } from '@/hooks/useOffers';
 import { useSnippets } from '@/hooks/useSnippets';
+import { useGoalMath, useGoals } from '@/hooks/useGoals';
 import {
   applyOutreachFilters,
   EMPTY_FILTERS,
@@ -68,6 +70,8 @@ export default function OutreachPage() {
 
   const [tab, setTab] = useState<Tab>('contacts');
   const snippets = useSnippets();
+  const goals = useGoals();
+  const rublesPerOutreach = useGoalMath();
   /*
    * Выбранный оффер живёт на странице, а не в панели: копируют его и из
    * панели, и из каждой строки базы, и это обязан быть один и тот же текст.
@@ -503,6 +507,13 @@ export default function OutreachPage() {
       }
     >
       <PageTitle>{t.outreach.title}</PageTitle>
+
+      {/* Цель висит и здесь: рассылки — то самое действие, которым она
+          закрывается, и именно тут число «до цели ≈ N рассылок» перестаёт
+          быть отвлечённым. */}
+      {goals.pinned && (
+        <GoalStrip goal={goals.pinned} rublesPer={rublesPerOutreach} today={app.today} />
+      )}
 
       {/* Вкладки: библиотека офферов открывается со 2-го уровня. */}
       <div className="flex rounded-2xl bg-white/[0.05] p-1">

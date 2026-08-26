@@ -4,6 +4,7 @@ import { Minimize2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useApp } from '@/components/AppProvider';
+import { GoalStrip } from '@/components/goals/GoalStrip';
 import { BurnTimer } from '@/components/guard/BurnTimer';
 import { ActivityFeed } from '@/components/home/ActivityFeed';
 import { DailyTasks } from '@/components/home/DailyTasks';
@@ -17,6 +18,7 @@ import { useLanguage } from '@/components/LanguageProvider';
 import type { ContactDraft } from '@/components/outreach/ContactSheet';
 import { SoberMode } from '@/components/sober/SoberMode';
 import { Button, DeskColumns, FullPageLoader, useStickyState } from '@/components/ui';
+import { useGoalMath, useGoals } from '@/hooks/useGoals';
 import { formatShortDate } from '@/lib/date';
 import { daysUntilDeadline } from '@/lib/mode';
 import { onceKey, XP } from '@/lib/xp';
@@ -25,6 +27,8 @@ export default function HomePage() {
   const { t, lang } = useLanguage();
   const router = useRouter();
   const app = useApp();
+  const goals = useGoals();
+  const rublesPerOutreach = useGoalMath();
 
   const [adding, setAdding] = useState(false);
   const [sober, setSober] = useState(false);
@@ -78,6 +82,20 @@ export default function HomePage() {
           cycleDate={formatShortDate(profile.cycle_start_date, lang)}
           cycleDay={app.cycleDayNumber}
         />
+      )}
+
+      {/*
+        Цель — над всем остальным и на всю ширину.
+
+        Она отвечает на вопрос «зачем», а счётчик рассылок ниже — на вопрос
+        «сколько сегодня». Порядок именно такой: сначала зачем, потом
+        сколько. Полоса при этом узкая и спорить со счётчиком за внимание
+        не может — у него 96 пунктов против её трёх строк.
+
+        В режиме фокуса цель тоже видна: фокус убирает фон дня, а не смысл.
+      */}
+      {goals.pinned && (
+        <GoalStrip goal={goals.pinned} rublesPer={rublesPerOutreach} today={app.today} />
       )}
 
       {/*

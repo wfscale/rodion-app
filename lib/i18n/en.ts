@@ -33,6 +33,9 @@ export const en: Dict = {
     day: 'day',
     days2: 'days',
     days5: 'days',
+    msg: 'message',
+    msg2: 'messages',
+    msg5: 'messages',
     retry: 'Retry',
     error: 'Something went wrong',
     open: 'Open',
@@ -475,6 +478,52 @@ export const en: Dict = {
     closed: 'closed',
     quota: 'quota closed',
     record: 'daily record',
+  },
+
+  goals: {
+    title: 'Goals',
+    add: 'New goal',
+    edit: 'Edit goal',
+    empty: 'No goals yet. Set one and everything else gets a point.',
+    emptyHint: 'An amount and a date. The app works out the rest.',
+
+    name: 'Goal',
+    namePh: 'Jump with a parachute',
+    note: 'What it takes',
+    notePh: 'Close an expert on a fee plus a share',
+    amount: 'Amount',
+    amountPh: '30000',
+    amountHint: 'optional',
+    deadline: 'By what date',
+
+    days: 'days',
+    daysLeft: 'left',
+    today: 'today',
+    overdue: '{n} overdue',
+    of: 'of {n}',
+    collected: '{n} collected',
+
+    pace: '{n} a day needed',
+    paceOutreach: '{n} {unit} a day',
+    toGoal: '≈ {n} {unit}',
+    noMath: 'Nothing to count messages from yet: an average deal and at least one close are needed.',
+
+    ahead: '{n} ahead of schedule',
+    ontrack: 'on schedule',
+    behind: 'at this pace — {date}',
+    fresh: 'Not started yet.',
+    doneLabel: 'Reached',
+
+    addAmount: 'Add',
+    amountAdded: 'Recorded',
+    markDone: 'Reached',
+    reopen: 'Back to work',
+    pin: 'Keep in sight',
+    pinned: 'In sight',
+    remove: 'Delete goal',
+    removeConfirm: 'Delete this goal? It cannot be undone.',
+
+    notReady: 'Goals appear after migration v11 in Supabase.',
   },
 
   progress: {

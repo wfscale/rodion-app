@@ -47,3 +47,18 @@ export function pluralDays(n: number, lang: Language, d: Dict): string {
     many: d.common.days5,
   });
 }
+
+/**
+ * «1 рассылка / 2 рассылки / 5 рассылок».
+ *
+ * Понадобилось, когда цель начали считать в рассылках: «до цели ≈ 1
+ * рассылок» читается как ошибка приложения, а число рядом с целью обязано
+ * выглядеть посчитанным, а не сгенерированным.
+ */
+export function pluralMessages(n: number, lang: Language, d: Dict): string {
+  return plural(n, lang, {
+    one: d.common.msg,
+    few: d.common.msg2,
+    many: d.common.msg5,
+  });
+}
