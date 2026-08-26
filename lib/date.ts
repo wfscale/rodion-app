@@ -56,6 +56,17 @@ export function formatShortDate(iso: string, lang: 'ru' | 'en'): string {
   });
 }
 
+/**
+ * «10 авг» или «10 авг 2027», если год не тот же.
+ *
+ * Прогноз по цели может уехать на год вперёд, и «16 июн.» без года читается
+ * как ближайший июнь — то есть ровно наоборот тому, что произошло.
+ */
+export function formatDateSmart(iso: string, today: string, lang: 'ru' | 'en'): string {
+  const short = formatShortDate(iso, lang);
+  return iso.slice(0, 4) === today.slice(0, 4) ? short : `${short} ${iso.slice(0, 4)}`;
+}
+
 /** «10 авг, 14:32» из timestamptz. */
 export function formatDateTime(ts: string, lang: 'ru' | 'en'): string {
   const d = new Date(ts);

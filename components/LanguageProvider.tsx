@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { getDict, pluralDays, interpolate, type Dict } from '@/lib/i18n';
+import { getDict, pluralDays, pluralMessages, interpolate, type Dict } from '@/lib/i18n';
 import type { Language } from '@/lib/types';
 
 const STORAGE_KEY = 'rodion.lang';
@@ -23,6 +23,8 @@ type LanguageContextValue = {
   tf: (template: string, vars: Record<string, string | number>) => string;
   /** «3 дня» / «3 days» */
   days: (n: number) => string;
+  /** «3 рассылки» / «3 messages» */
+  msgs: (n: number) => string;
 };
 
 const LanguageContext = createContext<LanguageContextValue | null>(null);
@@ -58,6 +60,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       setLang,
       tf: interpolate,
       days: (n: number) => pluralDays(n, lang, t),
+      msgs: (n: number) => pluralMessages(n, lang, t),
     };
   }, [lang, setLang]);
 

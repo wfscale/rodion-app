@@ -337,6 +337,36 @@ export type Snippet = {
   updated_at: string;
 };
 
+/**
+ * Цель — сумма и срок.
+ *
+ * Всё остальное в приложении отвечает на вопрос «что делать сегодня» и ни
+ * одной частью не отвечает на вопрос «зачем». Цель — единственное место,
+ * где этот ответ хранится.
+ *
+ * target_amount допускает null намеренно: «закрыть эксперта» и «сделать
+ * запуск» — такие же цели, просто без суммы, и выдумывать для них цифру
+ * значит получить выдуманную цифру.
+ */
+export type Goal = {
+  id: string;
+  user_id: string;
+  title: string;
+  note: string | null;
+  /** null — цель без суммы: она просто сделана или нет. */
+  target_amount: number | null;
+  current_amount: number;
+  deadline: string;
+  /** От этой даты считается фактический темп. */
+  started_at: string;
+  /** Та единственная цель, которая висит перед глазами каждый день. */
+  pinned: boolean;
+  done: boolean;
+  done_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type XpTransaction = {
   id: string;
   user_id: string;
@@ -474,6 +504,7 @@ export type Database = {
       offers: Table<Offer, 'user_id' | 'title' | 'content'>;
       notes: Table<Note, 'user_id' | 'content'>;
       snippets: Table<Snippet, 'user_id' | 'title' | 'content'>;
+      goals: Table<Goal, 'user_id' | 'title' | 'deadline'>;
       reminders: Table<Reminder, 'user_id' | 'title' | 'due_at'>;
       xp_transactions: Table<XpTransaction, 'user_id' | 'amount' | 'reason'>;
       activity_feed: Table<ActivityEntry, 'user_id' | 'type'>;
