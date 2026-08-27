@@ -18,7 +18,8 @@ import { useLanguage } from '@/components/LanguageProvider';
 import type { ContactDraft } from '@/components/outreach/ContactSheet';
 import { SoberMode } from '@/components/sober/SoberMode';
 import { Button, DeskColumns, FullPageLoader, useStickyState } from '@/components/ui';
-import { useGoalMath, useGoals } from '@/hooks/useGoals';
+import { useGoals } from '@/hooks/useGoals';
+import { useFocusSession } from '@/components/session/SessionProvider';
 import { formatShortDate } from '@/lib/date';
 import { daysUntilDeadline } from '@/lib/mode';
 import { onceKey, XP } from '@/lib/xp';
@@ -28,7 +29,7 @@ export default function HomePage() {
   const router = useRouter();
   const app = useApp();
   const goals = useGoals();
-  const rublesPerOutreach = useGoalMath();
+  const session = useFocusSession();
 
   const [adding, setAdding] = useState(false);
   const [sober, setSober] = useState(false);
@@ -56,6 +57,9 @@ export default function HomePage() {
   );
   const canFocus = app.can('focus');
   const focusOn = canFocus && focus;
+
+  /** Незакрытые цели, кроме закреплённой: та уже висит наверху. */
+  const otherGoals = goals.goals.filter((goal) => !goal.done && !goal.pinned);
 
   async function handleQuickAdd(draft: ContactDraft) {
     setAdding(true);
@@ -95,7 +99,7 @@ export default function HomePage() {
         В режиме фокуса цель тоже видна: фокус убирает фон дня, а не смысл.
       */}
       {goals.pinned && (
-        <GoalStrip goal={goals.pinned} rublesPer={rublesPerOutreach} today={app.today} />
+        <GoalStrip goal={goals.pinned} today={app.today} />
       )}
 
       {/*
@@ -148,6 +152,24 @@ export default function HomePage() {
 
             <QuickAddOutreach today={app.today} onAdd={handleQuickAdd} busy={adding} />
 
+            {/*
+              Остальные цели — под быстрым вводом.
+
+              Закреплённая висит наверху, но она одна, а целей бывает пять.
+              На мониторе под счётчиком оставалось пустое место, и заполнить
+              его именно целями правильнее всего: это то, ради чего счётчик
+              вообще крутят. Полосы компактные и уводят на страницу целей —
+              вести их отсюда не нужно, нужно видеть.
+            */}
+            {!focusOn && otherGoals.length > 0 && (
+              <div className="space-y-2 pt-1">
+                <p className="section-label px-1">{t.goals.title}</p>
+                {otherGoals.map((goal) => (
+                  <GoalStrip key={goal.id} goal={goal} today={app.today} />
+                ))}
+              </div>
+            )}
+
             {focusOn && (
               <Button variant="ghost" full onClick={() => setFocus(false)}>
                 <Minimize2 size={16} />
@@ -168,10 +190,22 @@ export default function HomePage() {
               <DailyTasks
                 tasks={app.homeTasks}
                 tomorrow={app.tomorrowTasks}
-                onAdd={(text, forTomorrow) => void app.addTask(text, forTomorrow)}
+                onAdd={(text, forTomorrow, minutes) =>
+                  void app.addTask(text, forTomorrow, minutes)
+                }
                 onToggle={(task) => void app.toggleHomeTask(task)}
                 onDelete={(task) => void app.deleteTask(task.id)}
                 onDeleteTomorrow={(id) => void app.deleteTask(id)}
+                timerBusy={Boolean(session.session)}
+                onStartTimer={(task) =>
+                  session.start({
+                    kind: 'task',
+                    label: task.text,
+                    minutes: task.minutes ?? 0,
+                    taskId: task.id,
+                    taskSource: task.source,
+                  })
+                }
               />
 
               <MorningCheckin

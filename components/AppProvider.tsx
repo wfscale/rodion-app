@@ -46,6 +46,7 @@ import {
   type GuardState,
   type GuardView,
 } from '@/lib/shield';
+import { breakStreak, rollMode, type ModeCounters, type ModeKey } from '@/lib/mode';
 import { activeCount, isActive, nowLocal, urgencyOf } from '@/lib/reminders';
 import { createClient } from '@/lib/supabase/client';
 import { syncSheets } from '@/lib/sheets-client';
@@ -114,6 +115,8 @@ export type HomeTask = {
   source: 'day' | 'project';
   /** Имя эксперта. Только у задач проекта — по нему видно, откуда она. */
   project: string | null;
+  /** Отведённое время в минутах. null — не оценивали. */
+  minutes: number | null;
 };
 
 export type ReminderDraft = {
@@ -177,7 +180,9 @@ type AppContextValue = {
   /** Задачи, отложенные на завтра. Утром они сами станут задачами дня. */
   tomorrowTasks: DailyTask[];
 
-  addTask: (text: string, forTomorrow?: boolean) => Promise<void>;
+  addTask: (text: string, forTomorrow?: boolean, minutes?: number | null) => Promise<void>;
+  /** Отметить задачу выполненной по её id — нужно таймеру. */
+  completeTask: (id: string, source: 'day' | 'project') => Promise<void>;
   toggleTask: (id: string) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   /** Отметить любую задачу списка дня — свою или проектную. */
@@ -193,7 +198,12 @@ type AppContextValue = {
   toggleHabit: (habitId: string) => Promise<void>;
   saveDay: (patch: Partial<DailyLog>) => Promise<void>;
 
-  submitModeCheckin: (held: { porn: boolean; mb: boolean; sugar: boolean }) => Promise<void>;
+  /** Отметить сорванное. Пустой список означает «всё держится». */
+  submitModeCheckin: (broken: ModeKey[]) => Promise<void>;
+  /** Обнулить один счётчик режима. */
+  breakMode: (key: ModeKey) => Promise<void>;
+  /** Счётчики режима из профиля. */
+  modeCounters: ModeCounters;
 
   /** Взвести щит на сегодня — день не порвёт серию. */
   armShield: () => Promise<void>;
@@ -648,6 +658,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         completed: task.completed,
         source: 'day' as const,
         project: null,
+        minutes: task.minutes ?? null,
       })),
       ...projectTasks.map((task) => ({
         id: task.id,
@@ -655,6 +666,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         completed: task.done,
         source: 'project' as const,
         project: task.project,
+        minutes: task.minutes ?? null,
       })),
     ],
     [tasks, projectTasks, today],
@@ -947,6 +959,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         'first-reply': 'reply',
         'first-call': 'call',
         'first-closed': 'closed',
+        'call-again': 'callAgain',
+        'closed-again': 'closedAgain',
       };
 
       for (const event of events) {
@@ -1338,7 +1352,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * никакого фонового задания для этого не нужно.
    */
   const addTask = useCallback(
-    async (text: string, forTomorrow = false) => {
+    async (text: string, forTomorrow = false, minutes: number | null = null) => {
       if (!user || !text.trim()) return;
       const { data } = await supabase
         .from('daily_tasks')
@@ -1346,12 +1360,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
           user_id: user.id,
           date: forTomorrow ? shiftDate(today, 1) : today,
           text: text.trim(),
+          minutes,
         })
         .select('*')
         .single();
       if (data) setTasks((previous) => [...previous, data as DailyTask]);
     },
     [supabase, user, today],
+  );
+
+  /**
+   * Отметить задачу выполненной, не переключая её.
+   *
+   * Таймер по истечении закрывает задачу, и обычный toggle тут не годится:
+   * если задачу успели закрыть руками, переключатель снял бы отметку.
+   */
+  const completeTask = useCallback(
+    async (id: string, source: 'day' | 'project') => {
+      if (source === 'day') {
+        setTasks((previous) =>
+          previous.map((x) => (x.id === id ? { ...x, completed: true } : x)),
+        );
+        await supabase.from('daily_tasks').update({ completed: true }).eq('id', id);
+        return;
+      }
+
+      setProjectTasks((previous) =>
+        previous.map((x) => (x.id === id ? { ...x, done: true } : x)),
+      );
+      await supabase.from('project_tasks').update({ done: true } as never).eq('id', id);
+    },
+    [supabase],
   );
 
   const toggleTask = useCallback(
@@ -1572,27 +1611,92 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /*  Вечерний чекин режима                                              */
   /* ------------------------------------------------------------------ */
 
-  const submitModeCheckin = useCallback(
-    async (held: { porn: boolean; mb: boolean; sugar: boolean }) => {
+  /** Счётчики режима, как они лежат в профиле. */
+  const modeCounters = useMemo<ModeCounters>(
+    () => ({
+      porn: profile?.mode_porn_days ?? 0,
+      mb: profile?.mode_mb_days ?? 0,
+      sugar: profile?.mode_sugar_days ?? 0,
+      flour: profile?.mode_flour_days ?? 0,
+      music: profile?.mode_music_days ?? 0,
+      reels: profile?.mode_reels_days ?? 0,
+    }),
+    [
+      profile?.mode_porn_days,
+      profile?.mode_mb_days,
+      profile?.mode_sugar_days,
+      profile?.mode_flour_days,
+      profile?.mode_music_days,
+      profile?.mode_reels_days,
+    ],
+  );
+
+  /** Счётчики в поля профиля. */
+  const modePatch = useCallback(
+    (counters: ModeCounters): Partial<Profile> => ({
+      mode_porn_days: counters.porn,
+      mode_mb_days: counters.mb,
+      mode_sugar_days: counters.sugar,
+      mode_flour_days: counters.flour,
+      mode_music_days: counters.music,
+      mode_reels_days: counters.reels,
+    }),
+    [],
+  );
+
+  /**
+   * Обнулить один счётчик.
+   *
+   * Единственное, что человек отмечает руками. Всё остальное режим считает
+   * сам: держался ты или нет, знаешь только ты, и спрашивать приложению
+   * стоит лишь про срыв.
+   */
+  const breakMode = useCallback(
+    async (key: ModeKey) => {
       if (!profile) return;
-
-      await updateProfile({
-        mode_porn_days: held.porn ? (profile.mode_porn_days ?? 0) + 1 : 0,
-        mode_mb_days: held.mb ? (profile.mode_mb_days ?? 0) + 1 : 0,
-        mode_sugar_days: held.sugar ? (profile.mode_sugar_days ?? 0) + 1 : 0,
-        mode_last_checkin: today,
-      });
-
-      // Полностью выдержанный день награждается один раз за сутки.
-      if (held.porn && held.mb && held.sugar) {
-        const key = `mode:${today}`;
-        if (!attemptedKeys.current.has(key)) {
-          attemptedKeys.current.add(key);
-          await awardXp(8, 'mode', key);
-        }
-      }
+      await updateProfile(modePatch(breakStreak(modeCounters, key)));
     },
-    [profile, updateProfile, awardXp, today],
+    [profile, updateProfile, modeCounters, modePatch],
+  );
+
+  /* ------------------------------------------------------------------ */
+  /*  Режим: день засчитывается сам                                      */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Раньше счётчик двигал вечерний чекин, и у человека, который держался, но
+   * не открыл вечером приложение, счётчик замирал. Замерший счётчик
+   * обесценивает выдержку ровно тем, что её не замечает.
+   *
+   * Теперь дни начисляются сами при смене суток, а руками отмечается только
+   * срыв. Пропуск в несколько дней начисляет столько же: приложение не
+   * открывали, но жили.
+   */
+  const modeRolled = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!profile || loading) return;
+    if (modeRolled.current === today) return;
+
+    modeRolled.current = today;
+
+    const rolled = rollMode(modeCounters, profile.mode_last_checkin, today);
+    if (!rolled.changed) return;
+
+    void updateProfile({ ...modePatch(rolled.counters), mode_last_checkin: today });
+  }, [profile, loading, today, modeCounters, modePatch, updateProfile]);
+
+
+  const submitModeCheckin = useCallback(
+    async (broken: ModeKey[]) => {
+      if (!profile) return;
+      if (broken.length === 0) return;
+
+      let counters = modeCounters;
+      for (const key of broken) counters = breakStreak(counters, key);
+      await updateProfile(modePatch(counters));
+    },
+    [profile, updateProfile, modeCounters, modePatch],
   );
 
   const signOut = useCallback(async () => {
@@ -1642,6 +1746,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toggleTask,
       deleteTask,
       toggleHomeTask,
+      completeTask,
       reloadProjectTasks,
       addReminder,
       updateReminder,
@@ -1650,6 +1755,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       toggleHabit,
       saveDay,
       submitModeCheckin,
+      breakMode,
+      modeCounters,
       armShield,
       disarmShield,
       setPause,
@@ -1666,9 +1773,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       quota, guard, levelInfo, cycleDayNumber, sentTotal, can,
       addContact, addLeads, markSent, updateContact, setStatus, deleteContact, touchContact, muteContact,
       saveConversation,
-      addTask, toggleTask, deleteTask, toggleHomeTask, reloadProjectTasks,
+      addTask, toggleTask, deleteTask, toggleHomeTask, completeTask, reloadProjectTasks,
       addReminder, updateReminder, toggleReminder, deleteReminder,
-      toggleHabit, saveDay, submitModeCheckin,
+      toggleHabit, saveDay, submitModeCheckin, breakMode, modeCounters,
       armShield, disarmShield, setPause, setShieldAuto,
       updateProfile, awardXp, load, signOut,
     ],

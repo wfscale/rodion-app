@@ -15,6 +15,11 @@ type WeeklyReportViewProps = {
  *
  * Отчёт нужен не для гордости, а для сравнения: неделя рядом с неделей
  * показывает темп честнее, чем ощущение «вроде работал».
+ *
+ * Числа идут в порядке воронки — рассылки, ответы, созвоны, закрытия, — и
+ * этим порядком читаются: сколько вошло сверху, сколько дошло донизу. XP
+ * здесь нет: по неделям он нигде не считается, и строка «0 XP» в каждой
+ * карточке сообщала бы только то, что показатель сломан.
  */
 export function WeeklyReportView({ reports }: WeeklyReportViewProps) {
   const { t, lang } = useLanguage();
@@ -41,23 +46,24 @@ export function WeeklyReportView({ reports }: WeeklyReportViewProps) {
               { value: report.replied, label: t.report.replied },
               { value: report.calls, label: t.report.calls },
               { value: report.closed, label: t.report.closed },
-              { value: report.xp_earned, label: t.report.xp },
             ];
 
             return (
               <GlassCard key={report.id} delay={i}>
                 <p className="section-label">{t.report.week}</p>
-                <p className="mt-1 text-lg font-extrabold">
+                <p className="mt-1 text-lg font-extrabold tabular-nums">
                   {from} — {to}
                 </p>
 
-                <div className="mt-4 grid grid-cols-3 gap-3 border-t border-divider pt-4">
+                <div className="mt-4 grid grid-cols-4 gap-2 border-t border-divider pt-4">
                   {stats.map((stat) => (
-                    <div key={stat.label}>
+                    <div key={stat.label} className="min-w-0">
                       <p className="text-2xl font-extrabold leading-none tabular-nums">
                         {stat.value}
                       </p>
-                      <p className="mt-1 text-xs leading-snug text-white/35">{stat.label}</p>
+                      <p className="mt-1 text-xs leading-snug text-white/35">
+                        {stat.label}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -65,7 +71,7 @@ export function WeeklyReportView({ reports }: WeeklyReportViewProps) {
                 {report.best_day && (
                   <div className="mt-4 flex items-baseline justify-between gap-3 border-t border-divider pt-4">
                     <span className="text-sm text-muted">{t.report.bestDay}</span>
-                    <span className="text-base font-bold tabular-nums">
+                    <span className="whitespace-nowrap text-base font-bold tabular-nums">
                       {formatShortDate(report.best_day, lang)} · {report.best_count}
                     </span>
                   </div>

@@ -16,16 +16,21 @@ type ScaleDashboardProps = {
 };
 
 /** Ниже этого числа рассылок конверсия — случайность, а не показатель. */
-const MIN_SENT_FOR_FORECAST = 5;
-
-const HORIZONS = [30, 60, 90] as const;
+const MIN_SENT_FOR_RATE = 5;
 
 /**
- * Дашборд масштаба — прогноз дохода при текущем темпе и текущей конверсии.
+ * Дашборд масштаба — темп и то, из чего он сложился.
  *
- * Средний чек не угадывается: его вводит человек. Всё остальное считается
- * из фактических рассылок и закрытий — прогноз должен опираться на то,
- * что уже произошло, иначе это просто мечты с цифрами.
+ * Прогноза дохода здесь нет намеренно. Один эксперт приносит два миллиона,
+ * десять других — ноль; между рассылками и деньгами стоят твёрдость ниши,
+ * лояльность аудитории, чек и то, сколько людей пришло горячими. Умножение
+ * среднего чека на средний темп не предсказывает ни одну из этих величин,
+ * зато выглядит как знание — и на него начинают опираться. Поэтому на экране
+ * только то, что уже случилось.
+ *
+ * Средний чек остался: от него считается «сколько рублей приносит одна
+ * рассылка» в целях (`rublesPerOutreach`) — там он делится на собственную
+ * цену закрытия, а не на догадку.
  */
 export function ScaleDashboard({
   sentTotal,
@@ -49,21 +54,49 @@ export function ScaleDashboard({
 
   const days = Math.max(1, daysActive);
   const pace = sentTotal / days;
-  const closeRate = sentTotal > 0 ? closedTotal / sentTotal : 0;
 
-  const enoughData = sentTotal >= MIN_SENT_FOR_FORECAST;
-
-  const labels: Record<(typeof HORIZONS)[number], string> = {
-    30: t.scale.in30,
-    60: t.scale.in60,
-    90: t.scale.in90,
-  };
+  const facts: { value: string; label: string }[] = [
+    { value: formatInt(sentTotal), label: t.common.msg5 },
+    { value: formatInt(closedTotal), label: t.scale.closings },
+    { value: formatInt(daysActive), label: t.common.days5 },
+  ];
 
   return (
     <div className="space-y-4">
       <PageTitle>{t.scale.title}</PageTitle>
 
+      {/* Темп — единственная цифра, на которую человек влияет напрямую */}
       <GlassCard>
+        <CardTitle>{t.scale.pace}</CardTitle>
+        <div className="flex items-baseline gap-2">
+          <span className="text-4xl font-extrabold leading-none tabular-nums">
+            {formatDecimal(pace, lang)}
+          </span>
+          <span className="text-sm text-muted">{t.scale.perDay}</span>
+        </div>
+
+        <div className="mt-4 grid grid-cols-3 gap-3 border-t border-divider pt-4">
+          {facts.map((fact) => (
+            <div key={fact.label}>
+              <p className="text-2xl font-extrabold leading-none tabular-nums">{fact.value}</p>
+              <p className="mt-1 text-xs leading-snug text-white/35">{fact.label}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 flex items-baseline justify-between gap-3 border-t border-divider pt-4">
+          <span className="text-sm text-muted">{t.offers.colRate}</span>
+          {sentTotal >= MIN_SENT_FOR_RATE ? (
+            <span className="text-base font-bold tabular-nums">
+              {formatDecimal((closedTotal / sentTotal) * 100, lang)}
+            </span>
+          ) : (
+            <span className="text-base font-bold text-white/35">{t.common.none}</span>
+          )}
+        </div>
+      </GlassCard>
+
+      <GlassCard delay={1}>
         <Field
           label={t.scale.avgDeal}
           hint={t.scale.avgDealHint}
@@ -77,57 +110,6 @@ export function ScaleDashboard({
         />
         {avgDeal > 0 && (
           <p className="mt-2 text-sm tabular-nums text-white/35">{formatInt(avgDeal)}</p>
-        )}
-      </GlassCard>
-
-      {/* Темп — единственная цифра, на которую человек влияет напрямую */}
-      <GlassCard delay={1}>
-        <CardTitle>{t.scale.pace}</CardTitle>
-        <div className="flex items-baseline gap-2">
-          <span className="text-4xl font-extrabold leading-none tabular-nums">
-            {formatDecimal(pace, lang)}
-          </span>
-          <span className="text-sm text-muted">{t.scale.perDay}</span>
-        </div>
-      </GlassCard>
-
-      <GlassCard delay={2}>
-        <CardTitle>{t.scale.forecast}</CardTitle>
-
-        {!enoughData ? (
-          <p className="py-2 text-sm leading-relaxed text-muted">{t.scale.needData}</p>
-        ) : (
-          <div className="space-y-3">
-            {HORIZONS.map((horizon) => {
-              const closings = pace * horizon * closeRate;
-              const money = closings * avgDeal;
-
-              return (
-                <div
-                  key={horizon}
-                  className="flex items-center justify-between gap-3 border-b border-divider pb-3 last:border-b-0 last:pb-0"
-                >
-                  <span className="w-[80px] shrink-0 text-sm font-bold text-white/70">
-                    {labels[horizon]}
-                  </span>
-
-                  <div className="min-w-0 flex-1 text-right">
-                    <p className="text-xl font-extrabold leading-none tabular-nums">
-                      {formatMoneyValue(money, lang)}
-                    </p>
-                    <p className="mt-1 text-xs text-white/35">{t.scale.money}</p>
-                  </div>
-
-                  <div className="w-[92px] shrink-0 text-right">
-                    <p className="text-xl font-extrabold leading-none tabular-nums">
-                      {formatDecimal(closings, lang)}
-                    </p>
-                    <p className="mt-1 text-xs text-white/35">{t.scale.closings}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
         )}
       </GlassCard>
     </div>
@@ -149,15 +131,9 @@ function formatInt(value: number): string {
     .replace(/\B(?=(\d{3})+(?!\d))/g, '\u00A0');
 }
 
-/** Пока значение меньше десяти, десятая доля важна: 0,4 закрытия ≠ 0. */
+/** Пока значение меньше десяти, десятая доля важна: 0,4 рассылки в день ≠ 0. */
 function formatDecimal(value: number, lang: Language): string {
   if (value >= 10) return formatInt(value);
   const separator = lang === 'ru' ? ',' : '.';
   return (Math.round(value * 10) / 10).toFixed(1).replace('.', separator);
-}
-
-/** Деньги всегда целые — копейки в прогнозе только мешают. */
-function formatMoneyValue(value: number, lang: Language): string {
-  if (value >= 1) return formatInt(value);
-  return formatDecimal(value, lang);
 }

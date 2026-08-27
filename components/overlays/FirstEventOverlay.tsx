@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect } from 'react';
 import { useLanguage } from '@/components/LanguageProvider';
 
-export type FirstEventKind = 'reply' | 'call' | 'closed';
+export type FirstEventKind = 'reply' | 'call' | 'closed' | 'callAgain' | 'closedAgain';
 
 type FirstEventOverlayProps = {
   /** null — оверлей скрыт. Смена значения перезапускает анимацию и таймер. */
@@ -25,10 +25,12 @@ const AUTO_DISMISS_MS = 4000;
 const SHARP = [0.16, 1, 0.3, 1] as const;
 
 /**
- * Полноэкранный оверлей первого события воронки (ТЗ §5).
+ * Полноэкранный оверлей события воронки.
  *
- * Показывается ровно один раз за всё время на каждый тип события — решение
- * «первое ли это» принимает родитель, компонент только рисует.
+ * Первый ответ показывается один раз за всю жизнь, а созвон и закрытие —
+ * каждый раз: они случаются раз в неделю и реже, и отметить их тостом в
+ * полторы секунды значит не отметить вовсе. Решение, какой это раз,
+ * принимает родитель — компонент только рисует.
  */
 export function FirstEventOverlay({ kind, xp, onDismiss }: FirstEventOverlayProps) {
   const { t } = useLanguage();

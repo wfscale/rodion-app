@@ -12,7 +12,13 @@ import type { ContactStatus } from '@/lib/types';
  */
 
 export type ToastTone = 'normal' | 'round' | 'record';
-export type OverlayKind = 'quota' | 'first-reply' | 'first-call' | 'first-closed';
+export type OverlayKind =
+  | 'quota'
+  | 'first-reply'
+  | 'first-call'
+  | 'first-closed'
+  | 'call-again'
+  | 'closed-again';
 export type FxKind = 'add' | 'reply' | 'close';
 
 export type GameEvent =
@@ -202,18 +208,35 @@ export function onStatusChanged(input: StatusChangeInput): GameEvent[] {
         : onceKey.contactStatus(contactId, status),
   });
 
-  // Первое событие каждого типа за всю жизнь — полноэкранный оверлей.
   const nowIso = new Date().toISOString();
 
+  /*
+   * Полноэкранный оверлей: первый ответ — один раз за жизнь, а созвон и
+   * закрытие — каждый раз.
+   *
+   * Ответы приходят почти каждый день, и оверлей на каждый превратился бы
+   * в помеху. Созвон случается раз в неделю, закрытие реже — это те самые
+   * два события, ради которых делается всё остальное, и отмечать их тостом
+   * в полторы секунды значит не отмечать вовсе. Редкое событие можно и нужно
+   * праздновать: именно на этом держится вся петля.
+   */
   if (isReplyStatus(status) && !hadFirstReply) {
     events.push({ kind: 'overlay', overlay: 'first-reply', xp: XP.REPLIED });
     events.push({ kind: 'profile', patch: { first_reply_at: nowIso } });
-  } else if (status === 'call' && !hadFirstCall) {
-    events.push({ kind: 'overlay', overlay: 'first-call', xp: XP.CALL });
-    events.push({ kind: 'profile', patch: { first_call_at: nowIso } });
-  } else if (status === 'closed' && !hadFirstClosed) {
-    events.push({ kind: 'overlay', overlay: 'first-closed', xp: XP.CLOSED });
-    events.push({ kind: 'profile', patch: { first_closed_at: nowIso } });
+  } else if (status === 'call') {
+    events.push({
+      kind: 'overlay',
+      overlay: hadFirstCall ? 'call-again' : 'first-call',
+      xp: XP.CALL,
+    });
+    if (!hadFirstCall) events.push({ kind: 'profile', patch: { first_call_at: nowIso } });
+  } else if (status === 'closed') {
+    events.push({
+      kind: 'overlay',
+      overlay: hadFirstClosed ? 'closed-again' : 'first-closed',
+      xp: XP.CLOSED,
+    });
+    if (!hadFirstClosed) events.push({ kind: 'profile', patch: { first_closed_at: nowIso } });
   } else {
     // Не первое событие — обходимся тостом.
     events.push({

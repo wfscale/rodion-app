@@ -27,6 +27,8 @@ import { NicheAnalytics } from '@/components/outreach/NicheAnalytics';
 import { OutreachFilters } from '@/components/outreach/OutreachFilters';
 import { PrimeList } from '@/components/outreach/PrimeList';
 import { PulseBar } from '@/components/PulseBar';
+import { SprintPicker } from '@/components/session/SprintPicker';
+import { useFocusSession } from '@/components/session/SessionProvider';
 import { ReminderSheet } from '@/components/reminders/ReminderSheet';
 import {
   Button,
@@ -39,7 +41,7 @@ import {
 } from '@/components/ui';
 import { useOffers } from '@/hooks/useOffers';
 import { useSnippets } from '@/hooks/useSnippets';
-import { useGoalMath, useGoals } from '@/hooks/useGoals';
+import { useGoals } from '@/hooks/useGoals';
 import {
   applyOutreachFilters,
   EMPTY_FILTERS,
@@ -71,7 +73,7 @@ export default function OutreachPage() {
   const [tab, setTab] = useState<Tab>('contacts');
   const snippets = useSnippets();
   const goals = useGoals();
-  const rublesPerOutreach = useGoalMath();
+  const focus = useFocusSession();
   /*
    * Выбранный оффер живёт на странице, а не в панели: копируют его и из
    * панели, и из каждой строки базы, и это обязан быть один и тот же текст.
@@ -512,7 +514,7 @@ export default function OutreachPage() {
           закрывается, и именно тут число «до цели ≈ N рассылок» перестаёт
           быть отвлечённым. */}
       {goals.pinned && (
-        <GoalStrip goal={goals.pinned} rublesPer={rublesPerOutreach} today={app.today} />
+        <GoalStrip goal={goals.pinned} today={app.today} />
       )}
 
       {/* Вкладки: библиотека офферов открывается со 2-го уровня. */}
@@ -569,6 +571,22 @@ export default function OutreachPage() {
               <Plus size={18} />
               {t.outreach.newOutreach}
             </Button>
+
+            {/* Спринт — маленькая кнопка рядом с главным действием: заход
+                начинают ровно перед тем, как сесть писать. */}
+            <SprintPicker
+              recordCount={app.profile?.sprint_record ?? 0}
+              recordMinutes={app.profile?.sprint_record_minutes ?? 0}
+              running={Boolean(focus.session)}
+              onStart={(minutes) =>
+                focus.start({
+                  kind: 'outreach',
+                  label: t.leads.tab,
+                  minutes,
+                  sentAtStart: app.quota.sent,
+                })
+              }
+            />
 
             <button
               type="button"

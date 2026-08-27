@@ -20,9 +20,8 @@ import { Button, DeskColumns, FullPageLoader, PageTitle, Segmented } from '@/com
 import { XpBar } from '@/components/XpBar';
 import { getLogicalDate, shiftDate } from '@/lib/date';
 import { dailySeries, funnelTotals, overdueTouchCount, spanDays, xpSeries } from '@/lib/insights';
-import { needsEveningCheckin } from '@/lib/mode';
-import { useGoalMath, useGoals } from '@/hooks/useGoals';
-import { missingWeeks, statsForWeek } from '@/lib/reports';
+import { useGoals } from '@/hooks/useGoals';
+import { reportsToWrite } from '@/lib/reports';
 import { SHIELD_MAX } from '@/lib/shield';
 import { createClient } from '@/lib/supabase/client';
 import type { WeeklyReport, XpTransaction } from '@/lib/types';
@@ -44,7 +43,6 @@ export default function ProgressPage() {
   const { t, tf, days } = useLanguage();
   const app = useApp();
   const goals = useGoals();
-  const rublesPerOutreach = useGoalMath();
 
   const [transactions, setTransactions] = useState<XpTransaction[]>([]);
   const [reports, setReports] = useState<WeeklyReport[]>([]);
@@ -82,28 +80,25 @@ export default function ProgressPage() {
       // достраиваются при первом заходе на страницу.
       if (!app.profile) return;
 
-      const gaps = missingWeeks({
+      /*
+       * Пересчитываются ВСЕ закрытые недели, а не только недостающие.
+       *
+       * Раньше отчёт считался один раз и застывал. Когда выяснилось, что он
+       * считал собранную базу рассылками, сохранённые строки так и остались
+       * бы неверными: сумма недель не сходилась с общим числом. Теперь
+       * расхождение с сохранённым лечится само при первом же заходе.
+       *
+       * xp_earned намеренно не передаётся: upsert обновляет только присланные
+       * колонки, и передать его нулём значило бы затирать при каждом заходе.
+       */
+      const rows = reportsToWrite({
+        contacts: app.contacts,
         cycleStart: app.profile.cycle_start_date,
         today: app.today,
-        existing: existing.map((r) => r.week_start),
-      });
+        existing,
+      }).map((row) => ({ ...row, user_id: app.user!.id }));
 
-      if (gaps.length === 0) return;
-
-      const rows = gaps.map((monday) => {
-        const st = statsForWeek(app.contacts, monday);
-        return {
-          user_id: app.user!.id,
-          week_start: monday,
-          sent: st.sent,
-          replied: st.replied,
-          calls: st.calls,
-          closed: st.closed,
-          best_day: st.bestDay,
-          best_count: st.bestCount,
-          xp_earned: 0,
-        };
-      });
+      if (rows.length === 0) return;
 
       const { data: created } = await supabase
         .from('weekly_reports')
@@ -144,12 +139,6 @@ export default function ProgressPage() {
   const profile = app.profile;
   const level = app.levelInfo.level;
   const teaser = nextLevelTeaser(level);
-  const counters = {
-    porn: profile.mode_porn_days ?? 0,
-    mb: profile.mode_mb_days ?? 0,
-    sugar: profile.mode_sugar_days ?? 0,
-  };
-  const checkinDue = needsEveningCheckin(profile.mode_last_checkin, app.today);
   const hasChartData = chartData.some((point) => point.value > 0);
 
   const daysActive = Math.max(1, app.cycleDayNumber);
@@ -172,9 +161,9 @@ export default function ProgressPage() {
             goals={goals.goals}
             ready={goals.ready}
             today={app.today}
-            rublesPer={rublesPerOutreach}
             onSave={(draft, id) => void goals.save(draft, id)}
             onAddAmount={(id, amount) => void goals.addAmount(id, amount)}
+            onSteps={(id, steps) => void goals.setSteps(id, steps)}
             onPin={(id) => void goals.pin(id)}
             onDone={(id, done) => void goals.setDone(id, done)}
             onDelete={(id) => void goals.remove(id)}
@@ -290,13 +279,13 @@ export default function ProgressPage() {
         side={
           <>
           {/* Режим */}
-          <ModeBlock counters={counters} />
+          <ModeBlock counters={app.modeCounters} onBreak={(key) => void app.breakMode(key)} />
 
-          {checkinDue && (
-            <Button variant="ghost" full onClick={() => setCheckinOpen(true)}>
-              {t.mode.checkinTitle}
-            </Button>
-          )}
+          {/* Кнопка стоит всегда: mode_last_checkin теперь значит «день
+              начислен», а сорваться можно и в уже начисленный день. */}
+          <Button variant="ghost" full onClick={() => setCheckinOpen(true)}>
+            {t.mode.checkinTitle}
+          </Button>
 
           {/* Тепловая карта — 8-й уровень, разворачивается до года на 19-м. */}
           {app.can('heatmap') && (
@@ -347,7 +336,7 @@ export default function ProgressPage() {
           {/* Дашборд масштаба — 7-й уровень */}
           {app.can('scale') ? (
             <ScaleDashboard
-              sentTotal={app.contacts.length}
+              sentTotal={funnel.sent}
               closedTotal={funnel.closed}
               daysActive={daysActive}
               avgDeal={profile.avg_deal_amount ?? 0}
@@ -371,9 +360,8 @@ export default function ProgressPage() {
 
       <EveningCheckin
         open={checkinOpen}
-        done={!checkinDue}
         onClose={() => setCheckinOpen(false)}
-        onSubmit={(held) => void app.submitModeCheckin(held)}
+        onSubmit={(broken) => void app.submitModeCheckin(broken)}
       />
     </div>
   );

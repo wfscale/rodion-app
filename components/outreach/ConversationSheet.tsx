@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { ArrowDown, ArrowUp, ClipboardPaste, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, ClipboardPaste, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { BottomSheet } from '@/components/BottomSheet';
 import { useLanguage } from '@/components/LanguageProvider';
@@ -15,6 +15,7 @@ import {
   MAX_MESSAGES,
   parseChat,
   type ChatMessage,
+  type MessageRole,
 } from '@/lib/conversation';
 import type { OutreachContact } from '@/lib/types';
 
@@ -24,6 +25,46 @@ type Props = {
   onClose: () => void;
   onSave: (contactId: string, messages: ChatMessage[]) => void | Promise<void>;
 };
+
+/** Сколько живёт отметка «сохранено»: дольше — и она уже не про твоё нажатие. */
+const SAVED_MS = 2000;
+
+/**
+ * Две кнопки «кто это писал».
+ *
+ * Роль нигде не угадывается: ошибка здесь молча портит весь разбор диалога,
+ * а исправлять её потом придётся по одному сообщению.
+ */
+function RoleButtons({
+  disabled,
+  onPick,
+}: {
+  disabled: boolean;
+  onPick: (role: MessageRole) => void;
+}) {
+  const { t } = useLanguage();
+
+  return (
+    <div className="mt-2 flex gap-2">
+      {(['me', 'them'] as const).map((role) => (
+        <motion.button
+          key={role}
+          type="button"
+          whileTap={{ scale: 0.96 }}
+          onClick={() => onPick(role)}
+          disabled={disabled}
+          className={`min-h-[44px] flex-1 rounded-2xl border text-sm font-bold transition-colors disabled:opacity-30 ${
+            role === 'me'
+              ? 'border-white bg-white text-ink'
+              : 'border-glass-border bg-white/[0.06] text-white'
+          }`}
+        >
+          {role === 'me' ? t.chat.addMe : t.chat.addThem}
+        </motion.button>
+      ))}
+    </div>
+  );
+}
 
 /**
  * Переписка с экспертом: ввод и разбор.
@@ -37,24 +78,37 @@ export function ConversationSheet({ contact, open, onClose, onSave }: Props) {
   const { t, tf } = useLanguage();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  /** Список, который последним ушёл в базу: по нему видно несохранённое. */
+  const [savedMessages, setSavedMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [paste, setPaste] = useState('');
   const [pasteMode, setPasteMode] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** Время последней записи: нулевое — отметку показывать нечего. */
+  const [savedAt, setSavedAt] = useState(0);
 
   // Пересобираем состояние только на открытии: правки в шторке не должны
   // затираться при каждом обновлении контакта у родителя.
   const contactId = contact?.id ?? null;
   useEffect(() => {
     if (!open) return;
-    setMessages(contact?.conversation ?? []);
+    const stored = contact?.conversation ?? [];
+    setMessages(stored);
+    setSavedMessages(stored);
     setDraft('');
     setPaste('');
     setPasteMode(false);
     setBusy(false);
+    setSavedAt(0);
     // contact намеренно не в зависимостях — см. комментарий выше.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, contactId]);
+
+  useEffect(() => {
+    if (!savedAt) return;
+    const timer = setTimeout(() => setSavedAt(0), SAVED_MS);
+    return () => clearTimeout(timer);
+  }, [savedAt]);
 
   const metrics = useMemo(() => chatMetrics(messages), [messages]);
   const issues = useMemo(() => chatIssues(metrics), [metrics]);
@@ -64,9 +118,15 @@ export function ConversationSheet({ contact, open, onClose, onSave }: Props) {
   const pastedBlocks = useMemo(() => (pasteMode ? parseChat(paste) : []), [pasteMode, paste]);
   const pastedAuthors = useMemo(() => authorsOf(pastedBlocks), [pastedBlocks]);
 
-  function append(role: ChatMessage['role']) {
+  const atLimit = messages.length >= MAX_MESSAGES;
+
+  // Сравнение по ссылке намеренное: любое изменение списка создаёт новый
+  // массив, а сохранение запоминает ровно тот, который ушёл в базу.
+  const dirty = messages !== savedMessages;
+
+  function append(role: MessageRole) {
     const text = draft.trim();
-    if (!text || messages.length >= MAX_MESSAGES) return;
+    if (!text || atLimit) return;
     setMessages((current) => [...current, { role, text }]);
     setDraft('');
   }
@@ -81,6 +141,7 @@ export function ConversationSheet({ contact, open, onClose, onSave }: Props) {
     });
   }
 
+  /** Разобранный экспорт всегда дописывается в конец — иначе порядок собьётся. */
   function applyPaste(me: string) {
     setMessages((current) =>
       [...current, ...assignRoles(pastedBlocks, me)].slice(0, MAX_MESSAGES),
@@ -89,25 +150,69 @@ export function ConversationSheet({ contact, open, onClose, onSave }: Props) {
     setPasteMode(false);
   }
 
+  /**
+   * Вставка без подписей «Имя, [дата]» уходит одним сообщением.
+   *
+   * Чаще всего это одна длинная реплика, скопированная прямо из чата, а не
+   * экспорт. Разбирать её на строки нельзя — получится десяток обрывков
+   * вместо сообщения; терять её тоже нельзя, поэтому спрашиваем только роль.
+   */
+  function applyPasteAsOne(role: MessageRole) {
+    const text = paste.trim();
+    if (!text || atLimit) return;
+    setMessages((current) => [...current, { role, text }]);
+    setPaste('');
+    setPasteMode(false);
+  }
+
+  /**
+   * Сохранение НЕ закрывает шторку.
+   *
+   * Переписку переносят кусками — по одной-две реплики из Telegram, — и
+   * закрытие после каждой записи означало бы двадцать заходов на диалог из
+   * двадцати сообщений. Закрывают крестиком, свайпом или тапом по фону.
+   */
   async function submit() {
     if (!contactId) return;
+    const snapshot = messages;
     setBusy(true);
     try {
-      await onSave(contactId, messages);
-      onClose();
+      await onSave(contactId, snapshot);
+      setSavedMessages(snapshot);
+      setSavedAt(Date.now());
     } finally {
       setBusy(false);
     }
   }
 
+  /**
+   * Закрытие тоже записывает.
+   *
+   * Шторку закрывают свайпом и фоном чаще, чем кнопкой, и несохранённые
+   * двадцать реплик здесь — потерянная работа, а не потерянный черновик.
+   */
+  function handleClose() {
+    if (contactId && dirty) void onSave(contactId, messages);
+    onClose();
+  }
+
   return (
     <BottomSheet
       open={open}
-      onClose={onClose}
+      onClose={handleClose}
       title={contact ? tf(t.chat.title, { name: contact.name }) : t.chat.titlePlain}
       footer={
         <Button full onClick={() => void submit()} disabled={busy || !contactId}>
-          {busy ? t.common.saving : t.common.save}
+          {busy ? (
+            t.common.saving
+          ) : savedAt ? (
+            <>
+              <Check size={16} />
+              {t.common.saved}
+            </>
+          ) : (
+            t.common.save
+          )}
         </Button>
       }
     >
@@ -217,9 +322,13 @@ export function ConversationSheet({ contact, open, onClose, onSave }: Props) {
           </ul>
         )}
 
-        {/* Ввод по одной реплике: кто сказал — тем и добавляется. */}
+        {/* Ввод по одной реплике: кто сказал — тем и добавляется. Счётчик
+            считает сообщения, а не символы: длина реплики здесь не ограничена
+            ничем, и «максимум 200» рядом с полем читалось наоборот. */}
         <div className="border-t border-divider pt-4">
-          <Label hint={tf(t.chat.limit, { n: MAX_MESSAGES })}>{t.chat.addTitle}</Label>
+          <Label hint={`${messages.length} ${t.common.of} ${MAX_MESSAGES}`}>
+            {t.chat.addTitle}
+          </Label>
           <textarea
             rows={3}
             value={draft}
@@ -227,24 +336,7 @@ export function ConversationSheet({ contact, open, onClose, onSave }: Props) {
             placeholder={t.chat.draftPh}
             className="field resize-none"
           />
-          <div className="mt-2 flex gap-2">
-            {(['me', 'them'] as const).map((role) => (
-              <motion.button
-                key={role}
-                type="button"
-                whileTap={{ scale: 0.96 }}
-                onClick={() => append(role)}
-                disabled={!draft.trim() || messages.length >= MAX_MESSAGES}
-                className={`min-h-[44px] flex-1 rounded-2xl border text-sm font-bold transition-colors disabled:opacity-30 ${
-                  role === 'me'
-                    ? 'border-white bg-white text-ink'
-                    : 'border-glass-border bg-white/[0.06] text-white'
-                }`}
-              >
-                {role === 'me' ? t.chat.addMe : t.chat.addThem}
-              </motion.button>
-            ))}
-          </div>
+          <RoleButtons disabled={!draft.trim() || atLimit} onPick={append} />
         </div>
 
         {/* Массовая вставка: экспорт из Telegram разбирается по заголовкам
@@ -272,7 +364,10 @@ export function ConversationSheet({ contact, open, onClose, onSave }: Props) {
               />
 
               {paste.trim() && pastedAuthors.length === 0 && (
-                <p className="mt-2 text-sm leading-snug text-warn">{t.chat.pasteNoAuthors}</p>
+                <div className="mt-2">
+                  <p className="text-sm leading-snug text-warn">{t.chat.pasteNoAuthors}</p>
+                  <RoleButtons disabled={atLimit} onPick={applyPasteAsOne} />
+                </div>
               )}
 
               {pastedAuthors.length > 0 && (

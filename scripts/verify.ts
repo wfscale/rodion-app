@@ -26,7 +26,15 @@ import {
   quotaPct,
   rollChain,
 } from '@/lib/quota';
-import { modeStageKey, isModeActive, applyCheckin, daysUntilDeadline } from '@/lib/mode';
+import {
+  breakStreak,
+  daysUntilDeadline,
+  isModeActive,
+  modeStageKey,
+  MODE_KEYS,
+  rollMode,
+  type ModeCounters,
+} from '@/lib/mode';
 import { isReplyStatus, onOutreachAdded, onStatusChanged, totalXp, hasOverlay } from '@/lib/gamification';
 import {
   followUpState,
@@ -58,6 +66,7 @@ import {
   digestChats,
   parseChat,
   parseMessages,
+  type ChatMessage,
 } from '@/lib/conversation';
 import {
   activeCount,
@@ -91,8 +100,33 @@ import {
   weakLink,
 } from '@/lib/insights';
 import { countByTag, hasNoteToday, resurface } from '@/lib/notes-stats';
+import {
+  formatMinutes,
+  hasEstimate,
+  MAX_TASK_MINUTES,
+  parseMinutes,
+  taskBudget,
+} from '@/lib/tasktime';
+import {
+  durationMs,
+  elapsedMs,
+  formatClock,
+  isFinalStretch,
+  isOver,
+  isRecord,
+  isSession,
+  isStale,
+  pacePerHour,
+  parseSession,
+  pctFromRemaining,
+  remainingMs,
+  runMinutes,
+  sessionPct,
+  sprintResult,
+  SPRINT_OPTIONS,
+} from '@/lib/session';
 import { niceMax, smoothPath } from '@/lib/chart';
-import { statsForWeek, missingWeeks } from '@/lib/reports';
+import { missingWeeks, reportsToWrite, sameNumbers, statsForWeek, toWeekRow } from '@/lib/reports';
 import { buildPush } from '@/lib/push-messages';
 import {
   daysBetween,
@@ -135,19 +169,16 @@ import { assetsOf, externalHref, formatNumber, hasAssets, stagesOf } from '@/lib
 import { snippetPreview, sortSnippets, totalUses } from '@/lib/snippets';
 import { instagramUrl, parseHandle, parseLeads, summarizeIntake } from '@/lib/leads';
 import {
-  actualPace,
   daysLeft,
   daysPassed,
   goalProgress,
   goalState,
-  outreachesPerDay,
-  outreachesToGoal,
-  projectedDate,
+  newStepId,
   remaining,
-  requiredPace,
-  rublesPerOutreach,
-  slackDays,
   sortGoals,
+  stepProgress,
+  stepsOf,
+  timeProgress,
 } from '@/lib/goals';
 import {
   audioPath,
@@ -430,13 +461,28 @@ check('5 дней — неделя', modeStageKey(5), 's2');
 check('10 дней — норадреналин', modeStageKey(10), 's3');
 check('18 дней — скулы', modeStageKey(18), 's4');
 check('30 дней — новый режим', modeStageKey(30), 's5');
-check('режим активен при 14+ у всех', isModeActive({ porn: 14, mb: 20, sugar: 15 }), true);
-check('режим не активен если один отстаёт', isModeActive({ porn: 14, mb: 20, sugar: 13 }), false);
-check(
-  '«да» растит, «нет» обнуляет',
-  applyCheckin({ porn: 5, mb: 5, sugar: 5 }, { porn: true, mb: false, sugar: true }),
-  { porn: 6, mb: 0, sugar: 6 },
-);
+const mode = (n: number): ModeCounters =>
+  Object.fromEntries(MODE_KEYS.map((k) => [k, n])) as ModeCounters;
+
+check('в режиме шесть пунктов', MODE_KEYS.length, 6);
+check('режим активен при 14+ у всех шести', isModeActive(mode(14)), true);
+check('один отстающий гасит бейдж', isModeActive({ ...mode(30), reels: 13 }), false);
+
+/*
+ * Счёт по умолчанию. Раньше день засчитывал вечерний ответ, и у человека,
+ * который держался, но не открыл приложение, счётчик замирал. Замерший
+ * счётчик обесценивает выдержку ровно тем, что её не замечает.
+ */
+check('тот же день второй раз не начисляем', rollMode(mode(5), '2026-08-27', '2026-08-27').changed, false);
+check('первый запуск только фиксирует день', rollMode(mode(0), null, '2026-08-27').changed, true);
+check('сутки — всем плюс один', rollMode(mode(5), '2026-08-26', '2026-08-27').counters.porn, 6);
+// Приложение не открывали четыре дня, но жили: дни засчитываются все.
+check('пропуск четырёх суток — всем плюс четыре', rollMode(mode(5), '2026-08-23', '2026-08-27').counters.reels, 9);
+check('часы уехали назад — ничего не трогаем', rollMode(mode(5), '2026-08-28', '2026-08-27').changed, false);
+
+check('срыв обнуляет только свой счётчик', breakStreak(mode(9), 'sugar').sugar, 0);
+check('остальные после срыва продолжают расти', breakStreak(mode(9), 'sugar').porn, 9);
+
 check('дней до дедлайна', daysUntilDeadline('2027-04-15', '2026-08-13'), 245);
 
 section('Привычки — шесть штук, вес минимальный');
@@ -519,6 +565,54 @@ check('пока квота не закрыта — цель квота', pickNud
 check('после квоты — ровный день', pickNudge({ sentToday: 7, quota: 5, total: 22 }).kind, 'round-day');
 check('ровный день → ровный общий счёт', pickNudge({ sentToday: 10, quota: 5, total: 22 }).kind, 'round-total');
 check('и он ведёт к 25', pickNudge({ sentToday: 10, quota: 5, total: 22 }).target, 25);
+
+/* -------------------------------------------------------------------------- */
+section('Редкое событие празднуется каждый раз');
+
+const again = (status: 'call' | 'closed', had: boolean) =>
+  onStatusChanged({
+    contactId: 'c1',
+    status,
+    hadFirstReply: true,
+    hadFirstCall: status === 'call' ? had : true,
+    hadFirstClosed: status === 'closed' ? had : true,
+  });
+
+// Ответы приходят почти каждый день — оверлей на каждый был бы помехой.
+check(
+  'повторный ответ обходится тостом',
+  hasOverlay(
+    onStatusChanged({
+      contactId: 'c1',
+      status: 'replied',
+      hadFirstReply: true,
+      hadFirstCall: true,
+      hadFirstClosed: true,
+    }),
+    'first-reply',
+  ),
+  false,
+);
+
+// Созвон раз в неделю, закрытие реже: отметить их тостом в полторы секунды
+// значит не отметить вовсе.
+check('первый созвон — свой оверлей', hasOverlay(again('call', false), 'first-call'), true);
+check('второй созвон тоже празднуется', hasOverlay(again('call', true), 'call-again'), true);
+check('первое закрытие — свой оверлей', hasOverlay(again('closed', false), 'first-closed'), true);
+check('второе закрытие тоже празднуется', hasOverlay(again('closed', true), 'closed-again'), true);
+// Отметку «первое было» ставим один раз: иначе дата первого закрытия
+// переписывалась бы каждым следующим.
+check(
+  'повторное закрытие не трогает дату первого',
+  again('closed', true).some((e) => e.kind === 'profile'),
+  false,
+);
+check(
+  'первое закрытие дату ставит',
+  again('closed', false).some((e) => e.kind === 'profile'),
+  true,
+);
+check('цена закрытия не изменилась', totalXp(again('closed', true)), XP.CLOSED);
 
 /* -------------------------------------------------------------------------- */
 section('Каскад: продвижение по воронке');
@@ -737,6 +831,124 @@ check(
 
 
 /* -------------------------------------------------------------------------- */
+section('Отчёт не считает базу рассылками');
+
+const wk = '2026-08-10';
+
+// Жалоба была ровно эта: сумма недель не сходилась с общим числом рассылок.
+// Причина — собранная база: у неё есть дата касания, но письма не было.
+check(
+  'собранная база не считается рассылкой',
+  statsForWeek(
+    [
+      mk({ status: 'not_sent', first_contact_date: '2026-08-11' }),
+      mk({ status: 'sent', first_contact_date: '2026-08-11' }),
+    ],
+    wk,
+  ).sent,
+  1,
+);
+check(
+  'неделя из одной базы пустая',
+  statsForWeek([mk({ status: 'not_sent', first_contact_date: '2026-08-11' })], wk),
+  { weekStart: wk, sent: 0, replied: 0, calls: 0, closed: 0, bestDay: null, bestCount: 0 },
+);
+// Лучший день считался из того же цикла — база зажигала день, в который
+// не было отправлено ни одного сообщения.
+check(
+  'лучший день не считает базу',
+  statsForWeek(
+    [
+      mk({ status: 'not_sent', first_contact_date: '2026-08-11' }),
+      mk({ status: 'not_sent', first_contact_date: '2026-08-11' }),
+      mk({ status: 'sent', first_contact_date: '2026-08-13' }),
+    ],
+    wk,
+  ).bestDay,
+  '2026-08-13',
+);
+check(
+  'старый статус приводится к шкале и считается рассылкой',
+  statsForWeek([mk({ status: 'refused' as never, first_contact_date: '2026-08-11' })], wk).sent,
+  1,
+);
+check(
+  'удалённый чат и блокировка — тоже рассылки',
+  statsForWeek(
+    [
+      mk({ status: 'deleted_chat', first_contact_date: '2026-08-11' }),
+      mk({ status: 'blocked', first_contact_date: '2026-08-12' }),
+    ],
+    wk,
+  ).sent,
+  2,
+);
+
+const twoWeeks = [
+  mk({ status: 'not_sent', first_contact_date: '2026-08-11' }),
+  mk({ status: 'sent', first_contact_date: '2026-08-11' }),
+  mk({ status: 'sent', first_contact_date: '2026-08-04' }),
+];
+check(
+  'сумма недель равна общему числу рассылок',
+  statsForWeek(twoWeeks, '2026-08-10').sent + statsForWeek(twoWeeks, '2026-08-03').sent,
+  2,
+);
+
+/* -------------------------------------------------------------------------- */
+section('Отчёт лечит сам себя');
+
+const healContacts = [
+  mk({ status: 'sent', first_contact_date: '2026-08-04' }),
+  mk({ status: 'not_sent', first_contact_date: '2026-08-05' }),
+];
+const heal = (existing: Parameters<typeof reportsToWrite>[0]['existing']) =>
+  reportsToWrite({ contacts: healContacts, cycleStart: '2026-08-03', today: '2026-08-13', existing });
+
+// Строки, посчитанные до починки, так и остались бы завышенными: отчёт
+// считался один раз и застывал.
+check(
+  'завышенная строка переписывается',
+  heal([{ week_start: '2026-08-03', sent: 2, replied: 0, calls: 0, closed: 0, best_day: '2026-08-04', best_count: 1 }])
+    .map((r) => r.sent),
+  [1],
+);
+check(
+  'совпавшая строка не переписывается',
+  heal([{ week_start: '2026-08-03', sent: 1, replied: 0, calls: 0, closed: 0, best_day: '2026-08-04', best_count: 1 }]),
+  [],
+);
+check('отсутствующая строка создаётся', heal([]).map((r) => r.week_start), ['2026-08-03']);
+// Текущая неделя не закончилась, её итог ещё изменится.
+check(
+  'текущая неделя не пишется',
+  reportsToWrite({
+    contacts: [mk({ status: 'sent', first_contact_date: '2026-08-11' })],
+    cycleStart: '2026-08-10',
+    today: '2026-08-13',
+    existing: [],
+  }),
+  [],
+);
+// Страховка от вечной перезаписи пустых недель.
+check(
+  'null против null расхождением не считается',
+  sameNumbers(
+    { week_start: 'w', sent: 0, replied: 0, calls: 0, closed: 0, best_day: null, best_count: 0 },
+    toWeekRow({ weekStart: 'w', sent: 0, replied: 0, calls: 0, closed: 0, bestDay: null, bestCount: 0 }),
+  ),
+  true,
+);
+check(
+  'расхождение по лучшему дню тоже переписывает',
+  sameNumbers(
+    { week_start: 'w', sent: 1, replied: 0, calls: 0, closed: 0, best_day: '2026-08-05', best_count: 1 },
+    toWeekRow({ weekStart: 'w', sent: 1, replied: 0, calls: 0, closed: 0, bestDay: '2026-08-04', bestCount: 1 }),
+  ),
+  false,
+);
+
+/* -------------------------------------------------------------------------- */
 section('Переписка');
 
 const msg = (role: 'me' | 'them', text: string) => ({ role, text });
@@ -756,6 +968,38 @@ check('авторы вытаскиваются по порядку', authorsOf(p
 check('роли расставляются по выбранному автору', assignRoles(pasted, 'Родион').map((m) => m.role), ['me', 'them', 'me']);
 check('текст без заголовков не разбирается', parseChat('просто текст').length, 0);
 check('заголовок без тела ничего не добавляет', parseChat('Родион, [16.08.2025 14:03]').length, 0);
+
+// Пользователь решил, что подпись «максимум 200» под полем — это лимит
+// символов. Лимит на количество сообщений, длина не режется нигде.
+check(
+  'длинное сообщение не режется при разборе',
+  parseChat('Родион, [16.08.2025 14:03]\n' + 'я'.repeat(2400))[0]?.text.length,
+  2400,
+);
+check(
+  'и не режется на обратном пути из базы',
+  parseMessages([{ role: 'them', text: 'я'.repeat(2400) }])[0]?.text.length,
+  2400,
+);
+check(
+  'лимит считает сообщения, а не символы',
+  parseChat(
+    Array.from({ length: 250 }, (_, i) => `Родион, [16.08.2025 14:03]\nm${i}`).join('\n'),
+  ).length,
+  200,
+);
+
+// Переписку вставляют кусками: скопировал две реплики, сохранил, вернулся
+// за следующими. Куски обязаны дописываться, а не заменять предыдущие.
+const chunks: ChatMessage[] = (() => {
+  let acc: ChatMessage[] = [];
+  for (const chunk of ['Родион, [1]\nраз', 'Эксперт, [2]\nдва', 'Родион, [3]\nтри']) {
+    acc = parseMessages([...acc, ...assignRoles(parseChat(chunk), 'Родион')]);
+  }
+  return acc;
+})();
+check('куски дописываются в конец', chunks.map((m) => m.text), ['раз', 'два', 'три']);
+check('и роли кусков не путаются', chunks.map((m) => m.role), ['me', 'them', 'me']);
 
 const goodChat = [msg('me', 'привет, смотрел запуск'), msg('them', 'да'), msg('me', 'могу разобрать. интересно?')];
 const goodMetrics = chatMetrics(goodChat);
@@ -1541,7 +1785,7 @@ check('сводка считает пропущенные', summarizeIntake(lead
 check('сводка на пустом вводе', summarizeIntake('', []), { added: 0, skipped: 0 });
 
 /* -------------------------------------------------------------------------- */
-section('Цели: срок, темп, перевод в рассылки');
+section('Цели: срок, доли и шаги');
 
 const goal = (over: Partial<Parameters<typeof goalProgress>[0]> = {}) => ({
   target_amount: 30000 as number | null,
@@ -1570,58 +1814,41 @@ check('цель без суммы закрыта', goalProgress(goal({ target_am
 check('остаток', remaining(goal({ current_amount: 12400 })), 17600);
 check('остатка нет', remaining(goal({ current_amount: 30000 })), 0);
 check('перебор не даёт отрицательного', remaining(goal({ current_amount: 45000 })), 0);
-check('у цели без суммы остатка нет', remaining(goal({ target_amount: null })), 0);
 
-// Дневное число можно перебить сегодня; остаток перебить нельзя, его можно
-// только не успеть — в этом вся разница между темпом и счётчиком долга.
-check('нужный темп', requiredPace(goal({ current_amount: 12400 }), TODAY), 839);
-check('темп набранной цели — ноль', requiredPace(goal({ current_amount: 30000 }), TODAY), 0);
-check(
-  'срок вышел — нужен весь остаток',
-  requiredPace(goal({ current_amount: 10000, deadline: '2026-08-20' }), TODAY),
-  20000,
-);
+// Вторая половина честного ответа на «успеваю ли я»: сколько срока прошло.
+// Прогноза здесь нет намеренно — один эксперт может дать два миллиона, а
+// десять ноль, и предсказывать приход денег значит врать точным числом.
+check('доля срока', timeProgress(goal(), TODAY), 30);
+check('в день старта срок не начался', timeProgress(goal({ started_at: TODAY }), TODAY), 0);
+check('после дедлайна — сто', timeProgress(goal({ deadline: '2026-08-20' }), TODAY), 100);
+check('дедлайн раньше старта не ломает', timeProgress(goal({ deadline: '2026-08-01' }), TODAY), 100);
 
-check('фактический темп', actualPace(goal({ current_amount: 12000 }), TODAY), 1200);
-check('без поступлений темпа нет', actualPace(goal(), TODAY), 0);
-
-check('прогноз при текущем темпе', projectedDate(goal({ current_amount: 12000 }), TODAY), '2026-09-07');
-check('без темпа прогноза нет', projectedDate(goal(), TODAY), null);
-check('набранная цель — сегодня', projectedDate(goal({ current_amount: 30000 }), TODAY), TODAY);
-
-// Нулевой прогресс в первый же день — это не отставание, а ещё не начатая
-// работа. Назвать её отставанием значит добиться, чтобы на цель не смотрели.
-check('работа ещё не началась', goalState(goal(), TODAY), 'fresh');
-check('идёшь с опережением', goalState(goal({ current_amount: 20000 }), TODAY), 'ahead');
-check('отстаёшь', goalState(goal({ current_amount: 3000 }), TODAY), 'behind');
+// Деньги приходят кусками, поэтому отставанием считается расхождение
+// больше пяти пунктов, а не любое.
+check('деньга обгоняет время', goalState(goal({ current_amount: 15000 }), TODAY), 'ahead');
+check('деньга отстаёт от времени', goalState(goal({ current_amount: 3000 }), TODAY), 'behind');
+check('идёшь вровень', goalState(goal({ current_amount: 9000 }), TODAY), 'ontrack');
 check('закрытая цель', goalState(goal({ done: true }), TODAY), 'done');
 check('срок вышел', goalState(goal({ deadline: '2026-08-20' }), TODAY), 'overdue');
 check('цель без суммы просто идёт', goalState(goal({ target_amount: null }), TODAY), 'ontrack');
+// Нулевой прогресс в первые дни — это не отставание, а ещё не начатая работа.
+check('работа только началась', goalState(goal({ started_at: '2026-08-22' }), TODAY), 'fresh');
 
-// 20 000 за 10 дней — это 2000 в день, остаток 10 000 закрывается за пять
-// дней, то есть 28 августа против срока 13 сентября: шестнадцать дней запаса.
-check('запас в днях', slackDays(goal({ current_amount: 20000 }), TODAY), 16);
-check('отставание в днях', (slackDays(goal({ current_amount: 3000 }), TODAY) ?? 0) < 0, true);
+const steps = [
+  { id: 'a', title: 'Закрыть эксперта', done: true },
+  { id: 'b', title: 'Подписать договор', done: true },
+  { id: 'c', title: 'Сделать запуск', done: false },
+];
+check('прогресс по шагам', stepProgress(steps), { done: 2, total: 3, pct: 67 });
+check('шагов нет — ноль', stepProgress([]), { done: 0, total: 0, pct: 0 });
 
-// Врать выдуманным средним нельзя: на это число смотрят каждый день.
-check('рублей на рассылку', rublesPerOutreach(150000, 70), 150000 / 70);
-check('без чека не считаем', rublesPerOutreach(0, 70), null);
-check('без закрытий не считаем', rublesPerOutreach(150000, 0), null);
-
-check('рассылок до цели', outreachesToGoal(goal({ current_amount: 12400 }), 150000 / 70), 9);
-check('цель набрана — рассылок ноль', outreachesToGoal(goal({ current_amount: 30000 }), 2000), 0);
-check('без цены рассылки — нечего сказать', outreachesToGoal(goal(), null), null);
-check('рассылок в день', outreachesPerDay(goal({ current_amount: 12400 }), 150000 / 70, TODAY), 1);
-check(
-  'большая цель считается в рассылках',
-  outreachesToGoal(goal({ target_amount: 500000, current_amount: 0 }), 150000 / 70),
-  234,
-);
-
-// Прогноз по цели уезжает на год вперёд, и «16 июн.» без года читается как
-// ближайший июнь — то есть ровно наоборот тому, что произошло.
-check('в этом году год не пишем', formatDateSmart('2026-09-13', '2026-08-23', 'ru'), '13 сент.');
-check('в другом году пишем', formatDateSmart('2027-06-16', '2026-08-23', 'ru'), '16 июн. 2027');
+// В jsonb может лежать что угодно: null у старых строк, объект после правки
+// руками. Экран не должен падать ни на том, ни на другом.
+check('шаги из jsonb', stepsOf({ steps }).length, 3);
+check('null вместо шагов не роняет', stepsOf({ steps: null }), []);
+check('объект вместо шагов не роняет', stepsOf({ steps: {} }), []);
+check('мусор в массиве отсеивается', stepsOf({ steps: [null, 1, { title: 'ок', id: 'x', done: false }] }).length, 1);
+check('id шага уникален', newStepId() !== newStepId(), true);
 
 const goals = [
   { deadline: '2026-11-01', done: false },
@@ -1640,6 +1867,144 @@ check('исходный список не меняется', (() => {
   sortGoals(list);
   return list[0].deadline;
 })(), '2026-11-01');
+
+// Прогноз по цели уезжает на год вперёд, и «16 июн.» без года читается как
+// ближайший июнь — то есть ровно наоборот тому, что произошло.
+check('в этом году год не пишем', formatDateSmart('2026-09-13', '2026-08-23', 'ru'), '13 сент.');
+check('в другом году пишем', formatDateSmart('2027-06-16', '2026-08-23', 'ru'), '16 июн. 2027');
+
+/* -------------------------------------------------------------------------- */
+section('Время на задачу');
+
+check('ноль показывается словом', formatMinutes(0, ru), '0 мин');
+check('меньше часа', formatMinutes(45, ru), '45 мин');
+check('ровный час без минут', formatMinutes(60, ru), '1 ч');
+check('час с минутами', formatMinutes(90, ru), '1 ч 30 мин');
+check('сутки', formatMinutes(1440, ru), '24 ч');
+check('минуса не бывает', formatMinutes(-5, ru), '0 мин');
+check('английский формат', formatMinutes(90, en), '1 h 30 min');
+
+// То, что приложение напечатало, обязано разбираться обратно: иначе правка
+// оценки превращается в пересчёт в уме.
+check('обратный разбор своего же формата', parseMinutes('1 ч 30 мин'), 90);
+check('и английского тоже', parseMinutes('1 h 30 min'), 90);
+check('голое число — минуты', parseMinutes('90'), 90);
+check('часы точкой', parseMinutes('1.5ч'), 90);
+check('часы запятой', parseMinutes('1,5 ч'), 90);
+check('латинское h', parseMinutes('2h'), 120);
+check('минуты буквой', parseMinutes('45м'), 45);
+check('без пробелов', parseMinutes('1ч30'), 90);
+check('верхний регистр', parseMinutes('2 ЧАСА'), 120);
+// Полутора минут не бывает — голое дробное это часы.
+check('голое дробное — часы', parseMinutes('0.4'), 24);
+check('пусто', parseMinutes(''), null);
+check('одни пробелы', parseMinutes('   '), null);
+check('ноль оценкой не считается', parseMinutes('0'), null);
+check('слово', parseMinutes('завтра'), null);
+check('чужая единица', parseMinutes('30 abc'), null);
+check('минус', parseMinutes('-5'), null);
+check('потолок в минутах', parseMinutes('3000'), MAX_TASK_MINUTES);
+check('потолок в часах', parseMinutes('25ч'), MAX_TASK_MINUTES);
+
+check('null оценкой не считается', hasEstimate(null), false);
+check('ноль оценкой не считается', hasEstimate(0), false);
+check('положительное — оценка', hasEstimate(10), true);
+
+// Задачи без оценки в сумму не входят, но их число надо знать: иначе «3 часа»
+// выглядит полной картиной дня, когда половина задач просто не оценена.
+check(
+  'бюджет смешанного списка',
+  taskBudget([
+    { minutes: 45, completed: false },
+    { minutes: 15, completed: true },
+    { minutes: null, completed: false },
+    { minutes: 120, completed: true },
+  ]),
+  { total: 180, done: 135, left: 45, untimed: 1 },
+);
+check('пустой список', taskBudget([]), { total: 0, done: 0, left: 0, untimed: 0 });
+check(
+  'никто не оценён',
+  taskBudget([
+    { minutes: null, completed: true },
+    { minutes: 0, completed: false },
+  ]),
+  { total: 0, done: 0, left: 0, untimed: 2 },
+);
+
+/* -------------------------------------------------------------------------- */
+section('Спринт и таймер задачи');
+
+const T0 = 1_700_000_000_000;
+const sprint = {
+  id: 's1', kind: 'outreach' as const, label: 'Рассылки',
+  minutes: 60, startedAt: T0, sentAtStart: 10,
+};
+
+check('длительность захода', durationMs(sprint), 3_600_000);
+check('прошло десять минут', elapsedMs(sprint, T0 + 600_000), 600_000);
+// Часы на устройстве могут уехать назад — отрицательного времени не бывает.
+check('часы назад не дают минуса', elapsedMs(sprint, T0 - 5000), 0);
+check('остаток на старте', remainingMs(sprint, T0), 3_600_000);
+check('остаток за полминуты до конца', remainingMs(sprint, T0 + 3_570_000), 30_000);
+check('после конца остаток ноль', remainingMs(sprint, T0 + 7_200_000), 0);
+check('за миллисекунду до конца ещё идёт', isOver(sprint, T0 + 3_599_999), false);
+check('ровно в конце — вышло', isOver(sprint, T0 + 3_600_000), true);
+check('прогресс на старте', sessionPct(sprint, T0), 0);
+check('прогресс на половине', sessionPct(sprint, T0 + 1_800_000), 50);
+check('прогресс после конца', sessionPct(sprint, T0 + 9_000_000), 100);
+check('нулевая длительность не делит на ноль', pctFromRemaining(0, 0), 100);
+
+check('часы минут и секунд', formatClock(754_000), '12:34');
+check('больше часа', formatClock(3_900_000), '1:05:00');
+check('ровно час', formatClock(3_600_000), '1:00:00');
+check('без секунды до часа', formatClock(3_599_000), '59:59');
+check('ноль', formatClock(0), '0:00');
+check('минус не ломает', formatClock(-500), '0:00');
+check('секунды с ведущим нулём', formatClock(9400), '0:09');
+
+check('последняя минута', isFinalStretch(59_000), true);
+check('минута с секундой — ещё нет', isFinalStretch(61_000), false);
+
+// Заход, кончившийся ночью, не должен утром зачеркнуть задачу: это враньё
+// в списке дня.
+check('свежий заход восстанавливается', isStale(sprint, T0 + 3_600_000), false);
+check('через полчаса после конца ещё жив', isStale(sprint, T0 + 5_400_000), false);
+check('наутро выбрасывается', isStale(sprint, T0 + 40_000_000), true);
+
+check('реальная длительность', runMinutes(sprint, T0 + 1_200_000), 20);
+check('меньше минуты считается минутой', runMinutes(sprint, T0 + 10_000), 1);
+check('не больше отведённого', runMinutes(sprint, T0 + 5_400_000), 60);
+
+check('темп за час', pacePerHour(12, 60), 12);
+check('темп за двадцать минут', pacePerHour(12, 20), 36);
+check('без времени темпа нет', pacePerHour(5, 0), 0);
+
+check('итог захода', sprintResult({ sentAtStart: 10, sentNow: 22, minutes: 45 }), {
+  count: 12, minutes: 45, perHour: 16,
+});
+check('без отметки старта считать нечего', sprintResult({ sentNow: 22, minutes: 30 }).count, 0);
+check('счётчик уехал назад — ноль', sprintResult({ sentAtStart: 30, sentNow: 22, minutes: 30 }).count, 0);
+
+/*
+ * Рекорд считается в штуках, а не в темпе: две рассылки за пять минут дают
+ * 24 в час и перебили бы честный час работы. Но при равном числе выигрывает
+ * более короткий заход — поэтому длительность хранится рядом всегда.
+ */
+check('первый рекорд', isRecord(3, 15, 0, 0), true);
+check('ноль рекордом не бывает', isRecord(0, 60, 0, 0), false);
+check('больше — рекорд', isRecord(13, 60, 12, 20), true);
+check('меньше — не рекорд', isRecord(11, 20, 12, 60), false);
+check('столько же, но быстрее — рекорд', isRecord(12, 20, 12, 60), true);
+check('столько же, но дольше — нет', isRecord(12, 60, 12, 20), false);
+check('ровно то же самое — нет', isRecord(12, 45, 12, 45), false);
+
+check('варианты длительности', SPRINT_OPTIONS, [15, 25, 45, 60, 90]);
+check('разбор сохранённого захода', parseSession(JSON.stringify(sprint))?.id, 's1');
+check('битый json не роняет', parseSession('{'), null);
+check('пусто', parseSession(null), null);
+check('чужой объект не сессия', parseSession('{"id":"x"}'), null);
+check('нулевая длительность не сессия', isSession({ ...sprint, minutes: 0 }), false);
 
 /* -------------------------------------------------------------------------- */
 section('Полнота словарей');
