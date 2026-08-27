@@ -180,10 +180,18 @@ export type Profile = {
   deadline_date: string;
   cycle_start_date: string;
 
-  // Режим
+  /**
+   * Режим. Счётчики растут сами со сменой суток; обнуляет их только
+   * отмеченный срыв — держался ты или нет, знаешь только ты, и спрашивать
+   * приложению стоит лишь про срыв.
+   */
   mode_porn_days: number;
   mode_mb_days: number;
   mode_sugar_days: number;
+  mode_flour_days: number;
+  mode_music_days: number;
+  mode_reels_days: number;
+  /** Последний день, за который счётчики режима уже начислены. */
   mode_last_checkin: string | null;
 
   // Цепочка дней с рассылками
@@ -204,6 +212,14 @@ export type Profile = {
   first_reply_at: string | null;
   first_call_at: string | null;
   first_closed_at: string | null;
+
+  /**
+   * Рекорд спринта: больше всего рассылок за один заход, и за сколько минут.
+   * Длительность обязательна рядом: двенадцать за час и двенадцать за
+   * двадцать минут — разные достижения.
+   */
+  sprint_record: number;
+  sprint_record_minutes: number;
 
   sound_enabled: boolean;
   avg_deal_amount: number;
@@ -348,6 +364,16 @@ export type Snippet = {
  * запуск» — такие же цели, просто без суммы, и выдумывать для них цифру
  * значит получить выдуманную цифру.
  */
+/**
+ * Этап цели.
+ *
+ * Между суммой и сроком нет ни одного действия, и раньше приложение
+ * заполняло этот разрыв прогнозом — переводило сумму в число рассылок через
+ * среднюю конверсию. Для продюсирования это враньё: один эксперт может дать
+ * два миллиона, а десять — ноль, и «до цели 1083 рассылки» не значит ничего.
+ */
+export type GoalStep = { id: string; title: string; done: boolean };
+
 export type Goal = {
   id: string;
   user_id: string;
@@ -356,6 +382,8 @@ export type Goal = {
   /** null — цель без суммы: она просто сделана или нет. */
   target_amount: number | null;
   current_amount: number;
+  /** Шаги, которые человек пишет сам: единственная часть пути, зависящая от него. */
+  steps: GoalStep[];
   deadline: string;
   /** От этой даты считается фактический темп. */
   started_at: string;
@@ -392,6 +420,11 @@ export type DailyTask = {
   user_id: string;
   date: string;
   text: string;
+  /**
+   * Сколько времени отведено, в минутах. null — время не оценивали, и такая
+   * задача не участвует в бюджете дня.
+   */
+  minutes: number | null;
   completed: boolean;
   created_at: string;
 };
@@ -438,6 +471,8 @@ export type ProjectTask = {
   text: string;
   scope: TaskScope;
   date: string | null;
+  /** Сколько времени отведено, в минутах. null — не оценивали. */
+  minutes: number | null;
   done: boolean;
   created_at: string;
   updated_at: string;

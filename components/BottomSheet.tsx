@@ -2,7 +2,8 @@
 
 import { AnimatePresence, motion, type PanInfo } from 'framer-motion';
 import { X } from 'lucide-react';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 type BottomSheetProps = {
   open: boolean;
@@ -18,6 +19,15 @@ type BottomSheetProps = {
  * — выезжает снизу вверх, закрывается свайпом вниз (drag) или тапом по фону;
  * — высота ограничена 88dvh, содержимое скроллится внутри;
  * — на десктопе центрируется и не растягивается шире 520px.
+ *
+ * Рендерится порталом прямо в body, и это не украшение.
+ *
+ * position: fixed отсчитывается от экрана только до тех пор, пока ни у
+ * одного предка нет transform, filter или will-change. Любая карточка
+ * приложения — это motion.div, на котором framer оставляет transform, и
+ * шторка внутри такой карточки начинает позиционироваться относительно неё:
+ * уезжает вбок и обрезается по её высоте. Портал делает такую ошибку
+ * невозможной независимо от того, где шторку вызвали.
  */
 export function BottomSheet({
   open,
@@ -46,12 +56,19 @@ export function BottomSheet({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
+  // Портал доступен только в браузере: на сервере document нет, и первый
+  // клиентский рендер обязан совпасть с серверным, иначе ломается гидратация.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const handleDragEnd = (_: unknown, info: PanInfo) => {
     // Закрываем, если утянули достаточно далеко ИЛИ дёрнули резко вниз.
     if (info.offset.y > 120 || info.velocity.y > 600) onClose();
   };
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <AnimatePresence>
       {open && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
@@ -110,6 +127,7 @@ export function BottomSheet({
           </motion.div>
         </div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }

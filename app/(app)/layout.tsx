@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { AppProvider } from '@/components/AppProvider';
 import { BottomNav, Sidebar } from '@/components/BottomNav';
+import { SessionProvider } from '@/components/session/SessionProvider';
 
 /**
  * Оболочка авторизованной части приложения.
@@ -9,6 +10,7 @@ import { BottomNav, Sidebar } from '@/components/BottomNav';
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <AppProvider>
+      <SessionProvider>
       <Sidebar />
 
       {/*
@@ -29,6 +31,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       </main>
 
       <BottomNav />
+      </SessionProvider>
     </AppProvider>
   );
 }

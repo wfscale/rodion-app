@@ -2,10 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/components/AppProvider';
-import { forecast } from '@/lib/forecast';
-import { rublesPerOutreach, sortGoals } from '@/lib/goals';
+import { sortGoals } from '@/lib/goals';
 import { createClient } from '@/lib/supabase/client';
-import type { Goal } from '@/lib/types';
+import type { Goal, GoalStep } from '@/lib/types';
 
 export type GoalDraft = {
   title: string;
@@ -143,6 +142,14 @@ export function useGoals() {
     [supabase],
   );
 
+  /** Шаги правятся целиком: их единицы, а частичный апдейт jsonb это гонка. */
+  const setSteps = useCallback(
+    async (id: string, steps: GoalStep[]) => {
+      await patchGoal(id, { steps });
+    },
+    [patchGoal],
+  );
+
   const setDone = useCallback(
     async (id: string, done: boolean) => {
       await patchGoal(id, { done, done_at: done ? new Date().toISOString() : null });
@@ -173,6 +180,7 @@ export function useGoals() {
     error,
     save,
     addAmount,
+    setSteps,
     pin,
     setDone,
     remove,
@@ -180,21 +188,3 @@ export function useGoals() {
   };
 }
 
-/**
- * Сколько рублей приносит одна рассылка.
- *
- * Средний чек, делённый на цену закрытия в рассылках. null — считать не из
- * чего: либо закрытий ещё не было, либо чек не задан. Показывать в этом
- * случае выдуманное число нельзя: на него потом смотрят каждый день и по
- * нему принимают решения.
- */
-export function useGoalMath(): number | null {
-  const { contacts, profile } = useApp();
-
-  const data = useMemo(() => forecast(contacts), [contacts]);
-
-  return useMemo(
-    () => rublesPerOutreach(profile?.avg_deal_amount ?? 0, data.close.per),
-    [profile?.avg_deal_amount, data.close.per],
-  );
-}

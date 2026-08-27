@@ -1,23 +1,24 @@
-import { daysBetween, shiftDate } from '@/lib/date';
+import { daysBetween } from '@/lib/date';
+import type { GoalStep } from '@/lib/types';
 
 /**
- * Цели: срок, темп и перевод суммы в рассылки.
+ * Цели: срок, доли и шаги.
  *
- * Голый обратный отсчёт — счётчик долга. «Осталось 47 дней и 30 000 рублей»
- * не говорит, что делать сегодня, зато каждый день сообщает, что ты не там,
- * где должен быть. Такой счётчик демотивирует ровно с той скоростью, с
- * какой уменьшается.
+ * Здесь нет ни одного прогноза, и это главное решение модуля.
  *
- * Поэтому здесь всё считается в двух других единицах:
+ * Раньше сумма переводилась в число рассылок через среднюю конверсию и
+ * средний чек. Для продюсирования запусков такая арифметика врёт: один
+ * эксперт может дать два миллиона, а десять — ноль. «До цели 1083 рассылки»
+ * выглядит точным числом и не значит ничего, а число, которое не значит
+ * ничего, хуже отсутствующего: на него принимают решения.
  *
- *  — ТЕМП. Не «осталось 30 000», а «нужно 640 в день». Дневное число можно
- *    перебить сегодня; остаток перебить нельзя, его можно только не успеть.
+ * Осталось три вещи, каждая из которых — факт, а не мнение:
  *
- *  — РАССЫЛКИ. Приложение знает, во сколько рассылок обходится закрытие и
- *    сколько в среднем приносит сделка. Значит любую сумму можно назвать в
- *    том единственном действии, которое человек контролирует напрямую:
- *    «до цели ≈ 96 рассылок». Это число падает каждый раз, когда он
- *    работает, — в отличие от суммы, которая ждёт чужого решения.
+ *  — СРОК. Сколько дней прошло и сколько осталось.
+ *  — ДВЕ ДОЛИ. «41% собрано» против «30% срока». Обгоняет ли деньга время —
+ *    видно мгновенно и без единого допущения о том, как эта деньга придёт.
+ *  — ШАГИ. Их пишет сам человек: закрыть эксперта, подписать договор,
+ *    сделать запуск. Сумма зависит не только от него, шаги — только от него.
  */
 
 export type GoalLike = {
@@ -52,118 +53,83 @@ export function remaining(goal: GoalLike): number {
   return Math.max(0, goal.target_amount - Math.max(0, goal.current_amount || 0));
 }
 
-/**
- * Сколько нужно в день, чтобы успеть.
- *
- * Срок вышел, а сумма нет — возвращаем весь остаток: это честно, «нужно
- * 30 000 сегодня» лучше, чем деление на ноль или тихий ноль.
- */
-export function requiredPace(goal: GoalLike, today: string): number {
-  const left = remaining(goal);
-  if (left === 0) return 0;
-  const days = daysLeft(goal.deadline, today);
-  if (days <= 0) return left;
-  return Math.ceil(left / days);
-}
 
-/** Сколько в среднем выходит в день с начала работы над целью. */
-export function actualPace(goal: GoalLike, today: string): number {
-  const done = Math.max(0, goal.current_amount || 0);
-  if (done === 0) return 0;
-  return Math.round(done / daysPassed(goal.started_at, today));
-}
+
 
 /**
- * Когда цель будет достигнута при нынешнем темпе. null — темпа ещё нет.
+ * Какая доля срока прошла, 0..100.
  *
- * Это единственное честное «успеваешь или нет»: не мнение приложения, а
- * продолжение той скорости, с которой человек уже идёт.
+ * Считается от даты старта до дедлайна. Это вторая половина честного
+ * ответа на «успеваю ли я»: первая — сколько собрано.
  */
-export function projectedDate(goal: GoalLike, today: string): string | null {
-  const pace = actualPace(goal, today);
-  if (pace <= 0) return null;
-  const left = remaining(goal);
-  if (left === 0) return today;
-  return shiftDate(today, Math.ceil(left / pace));
+export function timeProgress(goal: GoalLike, today: string): number {
+  const total = daysBetween(goal.deadline, goal.started_at);
+  if (total <= 0) return 100;
+  const passed = daysBetween(today, goal.started_at);
+  return Math.max(0, Math.min(100, Math.round((passed / total) * 100)));
 }
 
 export type GoalState = 'done' | 'overdue' | 'ahead' | 'ontrack' | 'behind' | 'fresh';
 
 /**
- * Состояние цели.
+ * Насколько доля собранного расходится с долей прошедшего времени.
  *
- * 'fresh' — работа ещё не началась и судить не о чем. Называть нулевой
- * прогресс отставанием в первый же день — самый быстрый способ добиться,
- * чтобы на цель перестали смотреть.
+ * Порог в пять пунктов, а не ноль: деньги приходят кусками, и объявлять
+ * отставанием любое отклонение значит сообщать об отставании почти каждый
+ * день.
+ */
+export const GOAL_DRIFT = 5;
+
+/**
+ * Состояние цели: обгоняешь время или отстаёшь.
+ *
+ * 'fresh' — работа только началась и судить не о чем. Называть нулевой
+ * прогресс отставанием в первые дни — самый быстрый способ добиться, чтобы
+ * на цель перестали смотреть.
  */
 export function goalState(goal: GoalLike, today: string): GoalState {
   if (goal.done) return 'done';
-
-  const left = daysLeft(goal.deadline, today);
-  if (left < 0) return 'overdue';
+  if (daysLeft(goal.deadline, today) < 0) return 'overdue';
+  // У цели без суммы сравнивать нечего: она либо сделана, либо нет.
   if (!goal.target_amount) return 'ontrack';
 
-  const pace = actualPace(goal, today);
-  if (pace <= 0) return 'fresh';
+  const time = timeProgress(goal, today);
+  if (time < 10 && goal.current_amount <= 0) return 'fresh';
 
-  const projected = projectedDate(goal, today);
-  if (!projected) return 'fresh';
-
-  const slack = daysBetween(goal.deadline, projected);
-  if (slack >= 3) return 'ahead';
-  if (slack >= 0) return 'ontrack';
-  return 'behind';
+  const drift = goalProgress(goal) - time;
+  if (drift >= GOAL_DRIFT) return 'ahead';
+  if (drift <= -GOAL_DRIFT) return 'behind';
+  return 'ontrack';
 }
 
-/** На сколько дней идёшь впереди срока. Отрицательное — отстаёшь. */
-export function slackDays(goal: GoalLike, today: string): number | null {
-  const projected = projectedDate(goal, today);
-  if (!projected) return null;
-  return daysBetween(goal.deadline, projected);
+/* -------------------------------------------------------------------------- */
+/*  Шаги                                                                       */
+/* -------------------------------------------------------------------------- */
+
+export type StepProgress = { done: number; total: number; pct: number };
+
+export function stepProgress(steps: GoalStep[]): StepProgress {
+  const list = Array.isArray(steps) ? steps : [];
+  const total = list.length;
+  const done = list.filter((step) => step.done).length;
+  return { done, total, pct: total === 0 ? 0 : Math.round((done / total) * 100) };
 }
 
-/**
- * Сколько рублей приносит одна рассылка.
- *
- * Средний чек, делённый на число рассылок, в которое обходится закрытие.
- * null — считать не из чего: либо закрытий ещё не было, либо чек не задан.
- * Врать выдуманным средним нельзя: на это число потом смотрят каждый день.
- */
-export function rublesPerOutreach(
-  avgDeal: number,
-  outreachesPerClose: number,
-): number | null {
-  if (avgDeal <= 0 || outreachesPerClose <= 0) return null;
-  return avgDeal / outreachesPerClose;
+/** Шаги приходят из jsonb — там может лежать что угодно, включая null. */
+export function stepsOf(goal: { steps?: unknown }): GoalStep[] {
+  if (!Array.isArray(goal.steps)) return [];
+  return goal.steps.filter(
+    (step): step is GoalStep =>
+      Boolean(step) && typeof step === 'object' && typeof (step as GoalStep).title === 'string',
+  );
 }
 
-/**
- * Во сколько рассылок обходится остаток цели.
- *
- * То самое число, ради которого всё считается: сумма, названная в
- * действии, которое зависит только от тебя.
- */
-export function outreachesToGoal(
-  goal: GoalLike,
-  rublesPer: number | null,
-): number | null {
-  if (rublesPer === null || rublesPer <= 0) return null;
-  const left = remaining(goal);
-  if (left === 0) return 0;
-  return Math.ceil(left / rublesPer);
-}
-
-/** Сколько рассылок в день нужно, чтобы успеть к сроку. */
-export function outreachesPerDay(
-  goal: GoalLike,
-  rublesPer: number | null,
-  today: string,
-): number | null {
-  const total = outreachesToGoal(goal, rublesPer);
-  if (total === null) return null;
-  if (total === 0) return 0;
-  const days = daysLeft(goal.deadline, today);
-  return days <= 0 ? total : Math.ceil(total / days);
+/** id шага генерируется на клиенте: сервер о новом шаге ещё не знает. */
+export function newStepId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `step-${Date.now()}-${Math.round(Math.random() * 1_000_000)}`;
 }
 
 /**

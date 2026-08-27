@@ -2,6 +2,7 @@ import { daysBetween, shiftDate, weekStart } from '@/lib/date';
 import { followUpState, needsTouch } from '@/lib/followup';
 import {
   CALL_STATUSES,
+  normalizeStatus,
   REPLIED_STATUSES,
   SENT_STATUSES,
   type OutreachContact,
@@ -22,6 +23,17 @@ import {
 
 export type DayPoint = { date: string; sent: number };
 
+/**
+ * Дошла ли рассылка до адресата.
+ *
+ * Собранная база — это контакты со статусом not_sent, у которых дата
+ * касания уже стоит. Без этой проверки график, тепловая карта и зал славы
+ * зажигали бы дни, в которые не было отправлено ни одного сообщения.
+ */
+function wasSent(contact: Pick<OutreachContact, 'status'>): boolean {
+  return SENT_STATUSES.includes(normalizeStatus(contact.status));
+}
+
 /** Сколько рассылок в каждый день окна, включая нули. */
 export function dailySeries(
   contacts: OutreachContact[],
@@ -30,6 +42,7 @@ export function dailySeries(
 ): DayPoint[] {
   const counts = new Map<string, number>();
   for (const contact of contacts) {
+    if (!wasSent(contact)) continue;
     const date = (contact.first_contact_date ?? '').slice(0, 10);
     if (!date) continue;
     counts.set(date, (counts.get(date) ?? 0) + 1);
@@ -55,6 +68,7 @@ export function spanDays(
 ): number {
   let earliest: string | null = null;
   for (const contact of contacts) {
+    if (!wasSent(contact)) continue;
     const date = (contact.first_contact_date ?? '').slice(0, 10);
     if (!date) continue;
     if (earliest === null || date < earliest) earliest = date;
@@ -251,7 +265,7 @@ export function weeklySeries(
 
     for (const contact of contacts) {
       const date = (contact.first_contact_date ?? '').slice(0, 10);
-      if (date >= monday && date < next) sent += 1;
+      if (wasSent(contact) && date >= monday && date < next) sent += 1;
 
       const first = (contact.status_history ?? []).find(
         (entry) => entry.status === 'replied' || entry.status === 'replied_no',
@@ -280,6 +294,7 @@ export type BestDay = { date: string; sent: number };
 export function hallOfFame(contacts: OutreachContact[], limit = 5): BestDay[] {
   const counts = new Map<string, number>();
   for (const contact of contacts) {
+    if (!wasSent(contact)) continue;
     const date = (contact.first_contact_date ?? '').slice(0, 10);
     if (!date) continue;
     counts.set(date, (counts.get(date) ?? 0) + 1);

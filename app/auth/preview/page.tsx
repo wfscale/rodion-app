@@ -108,9 +108,10 @@ const ACTIVITY: ActivityEntry[] = [
 
 /* Список дня: свои задачи и поднятая из проекта — с именем эксперта. */
 const TASKS: HomeTask[] = [
-  { id: 't1', text: 'Написать оффер для фитнес-ниши', completed: false, source: 'day', project: null },
-  { id: 't2', text: 'Ответить Дмитрию', completed: true, source: 'day', project: null },
-  { id: 't3', text: 'Собрать 5 кастдевов', completed: false, source: 'project', project: '@anna_english' },
+  { id: 't1', text: 'Написать оффер для фитнес-ниши', completed: false, source: 'day', project: null, minutes: 45 },
+  { id: 't2', text: 'Ответить Дмитрию', completed: true, source: 'day', project: null, minutes: 15 },
+  { id: 't4', text: 'Позвонить в банк', completed: false, source: 'day', project: null, minutes: null },
+  { id: 't3', text: 'Собрать 5 кастдевов', completed: false, source: 'project', project: '@anna_english', minutes: 120 },
 ];
 
 const reminder = (over: Partial<Reminder>): Reminder =>
@@ -281,13 +282,15 @@ export default function PreviewPage() {
         <DailyTasks
           tasks={TASKS}
           tomorrow={[
-            { id: 'tm1', user_id: 'u', date: '2026-08-14', text: 'Собрать базу по психологам', completed: false, created_at: '' },
-            { id: 'tm2', user_id: 'u', date: '2026-08-14', text: 'Дожать Яну по договору', completed: false, created_at: '' },
+            { id: 'tm1', user_id: 'u', date: '2026-08-14', text: 'Собрать базу по психологам', minutes: 90, completed: false, created_at: '' },
+            { id: 'tm2', user_id: 'u', date: '2026-08-14', text: 'Дожать Яну по договору', minutes: 30, completed: false, created_at: '' },
           ]}
           onAdd={() => undefined}
           onToggle={() => undefined}
           onDelete={() => undefined}
           onDeleteTomorrow={() => undefined}
+          onStartTimer={() => undefined}
+          timerBusy={false}
         />
 
         <HabitsBlock done={done} onToggle={(id) => setDone((p) => ({ ...p, [id]: !p[id] }))} />
@@ -394,7 +397,10 @@ export default function PreviewPage() {
           onAuto={() => undefined}
         />
 
-        <ModeBlock counters={{ porn: 16, mb: 14, sugar: 15 }} />
+        <ModeBlock
+          counters={{ porn: 16, mb: 14, sugar: 15, flour: 9, music: 3, reels: 21 }}
+          onBreak={() => undefined}
+        />
 
         {/* Прогресс */}
         <div className="glass p-4">
