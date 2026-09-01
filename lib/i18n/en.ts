@@ -217,8 +217,6 @@ export const en: Dict = {
 
   outreach: {
     title: 'Outreach',
-    tabContacts: 'Contacts',
-    tabOffers: 'Offers',
 
     quickName: 'Name / handle',
     quickNiche: 'Niche',
@@ -269,11 +267,7 @@ export const en: Dict = {
     detailTitle: 'Expert card',
     history: 'Status history',
     noHistory: 'No changes yet.',
-    saveToOffers: 'Save to offers',
-    savedToOffers: 'Added to offers',
     addReminder: 'Remind me about this person',
-    conversationAdd: 'Load the conversation',
-    conversationCount: 'Conversation · {n}',
 
     inlineAdd: 'Add right here',
     empty: 'Empty so far. The first one goes on top.',
@@ -318,7 +312,6 @@ export const en: Dict = {
   },
 
   leads: {
-    tab: 'Leads',
     title: 'Collect the list',
     hint: 'Paste profile links — one per line or comma separated.',
     ph: 'https://instagram.com/name\n@name\ninstagram.com/name',
@@ -339,7 +332,7 @@ export const en: Dict = {
 
     openProfile: 'Open profile',
     telegram: 'Telegram',
-    telegramPh: 'handle without @',
+    telegramPh: 'handle',
     openTelegram: 'Open in Telegram',
     audience: 'Followers',
     audiencePh: '12k',
@@ -347,9 +340,17 @@ export const en: Dict = {
     drop: 'No DM',
     dropHint: 'Remove from the list',
 
+    own: 'Custom offer',
+    ownHint: 'Write to this person in your own words',
+    ownPh: 'The text that goes to this one person',
+    ownCopy: 'Copy and save',
+    ownClose: 'Collapse',
+    sentToday: 'Written today',
+    sentTodayCount: '{n} today',
+    intakeTitle: 'Add to base',
+
     offerTitle: 'Offer',
     offerEmpty: 'No snippets yet. Add an offer in notes and it shows up here.',
-    offerPick: 'Switch',
     copy: 'Copy the offer',
     copied: 'Copied',
     copyFailed: 'Could not copy',
@@ -411,50 +412,6 @@ export const en: Dict = {
     colRate: '% conversion',
   },
 
-  chat: {
-    title: 'Conversation · {name}',
-    titlePlain: 'Conversation',
-    empty: 'Empty so far. Add messages one by one or paste the whole thread.',
-    roleMe: 'me',
-    roleThem: 'expert',
-    addTitle: 'Add a message',
-    draftPh: 'Message text…',
-    addMe: 'I wrote this',
-    addThem: 'They wrote this',
-    moveUp: 'Up',
-    moveDown: 'Down',
-
-    pasteOpen: 'Paste the whole thread',
-    pasteTitle: 'Thread from Telegram',
-    pasteHint: 'copy it as is',
-    pastePh: 'Rodion, [16.08.2025 14:03]\nhi…',
-    pasteFound: 'Messages found: {n}',
-    pasteWhoAmI: 'Which one is you?',
-    pasteNoAuthors:
-      'No «Name, [date]» headers here. Drop it in as one message — just say whose it is.',
-
-    scoreTitle: 'Dialogue breakdown',
-    balance: 'Yours {mine} · theirs {theirs} · length {my} against {their} characters',
-    clean: 'The dialogue holds. Their move.',
-
-    issues: {
-      ballTheirs: 'They replied — you went quiet',
-      deadEnd: 'You had the last word and it leads nowhere',
-      monologue: 'Three messages in a row from you',
-      noQuestion: 'Not a single question in the whole thread',
-      wall: 'You write three times longer than they do',
-      oneSided: 'Mostly you are the one talking',
-    },
-
-    fixes: {
-      ballTheirs: 'Reply today. The pause costs more than an awkward wording.',
-      deadEnd: 'End on a question — otherwise replying is optional.',
-      monologue: 'One message, then wait. A streak reads as pressure.',
-      noQuestion: 'A question is the only thing that obliges an answer.',
-      wall: 'Match their length. They answer the way they like to read.',
-      oneSided: 'Ask more, explain less. Let them talk.',
-    },
-  },
 
   chatDigest: {
     title: 'What breaks in your conversations',
@@ -508,50 +465,6 @@ export const en: Dict = {
     focusOn: 'Now: {title}',
   },
 
-  goals: {
-    title: 'Goals',
-    add: 'New goal',
-    edit: 'Edit goal',
-    empty: 'No goals yet. Set one and everything else gets a point.',
-    emptyHint: 'An amount, a date and steps. The app works out the rest.',
-
-    name: 'Goal',
-    namePh: 'Jump with a parachute',
-    note: 'Why you want it',
-    notePh: 'So they do not draft me',
-    amount: 'Amount',
-    amountPh: '30000',
-    amountHint: 'optional',
-    deadline: 'By what date',
-
-    days: 'days',
-    overdue: '{n} overdue',
-    of: 'of {n}',
-
-    pctDone: '{n}% collected',
-    pctTime: '{n}% of the time',
-    ahead: 'ahead of schedule',
-    ontrack: 'level with schedule',
-    behind: 'behind schedule',
-    fresh: 'Not started yet.',
-    doneLabel: 'Reached',
-
-    steps: 'Steps',
-    stepPh: 'What needs doing',
-    addStep: 'Add a step',
-    stepsEmpty: 'Break the path into steps. The amount does not depend on you alone — the steps do.',
-    stepsProgress: '{done} of {total}',
-
-    addAmount: 'Add',
-    markDone: 'Reached',
-    reopen: 'Back to work',
-    pin: 'Keep in sight',
-    pinned: 'In sight',
-    remove: 'Delete goal',
-    removeConfirm: 'Delete this goal? It cannot be undone.',
-
-    notReady: 'Goals appear after migration v11 in Supabase.',
-  },
 
   progress: {
     title: 'Progress',
@@ -769,9 +682,9 @@ export const en: Dict = {
   },
 
   features: {
-    offers: 'Offer library',
-    offersDesc: 'Your outreach texts plus a breakdown of what the answered ones share.',
-    offersUnlock: 'A hunter builds an arsenal. Now you know what works and what does not.',
+    ownOffer: 'Per-person offer',
+    ownOfferDesc: 'Edit the text right in the base row — the app remembers what went to whom.',
+    ownOfferUnlock: 'One text for everyone is a lottery. Now you can aim.',
 
     niches: 'Niche analytics',
     nichesDesc: 'Where the response is alive: niche, sent, replied, conversion.',

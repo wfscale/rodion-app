@@ -23,9 +23,11 @@ import { QuickAddOutreach } from '@/components/home/QuickAddOutreach';
 import { RoundNudge } from '@/components/home/RoundNudge';
 import { ModeBlock } from '@/components/mode/ModeBlock';
 import { ContactCards } from '@/components/outreach/ContactCards';
+import { LeadIntake } from '@/components/outreach/LeadIntake';
+import { LeadList } from '@/components/outreach/LeadList';
+import { OfferBoard } from '@/components/outreach/OfferBoard';
+import { SentToday } from '@/components/outreach/SentToday';
 import { ContactTable, type TableSort } from '@/components/outreach/ContactTable';
-import { ConversationSheet } from '@/components/outreach/ConversationSheet';
-import { DialogueCard } from '@/components/outreach/DialogueCard';
 import { FollowUpList } from '@/components/outreach/FollowUpList';
 import { ForecastCard } from '@/components/outreach/ForecastCard';
 import { FunnelChart } from '@/components/outreach/FunnelChart';
@@ -97,6 +99,45 @@ const CONTACTS: OutreachContact[] = [
   contact({ name: '@igor_sales', niche: 'Продажи', status: 'replied_no' }),
   // Прочитал и снёс переписку — голубым, не красным: дверь не захлопнули.
   contact({ name: '@kate_nutri', niche: 'Нутрициология', status: 'deleted_chat' }),
+];
+
+/** База: найдены, но ещё не написаны. Касания не было — и просрочки тоже. */
+const LEADS: OutreachContact[] = [
+  contact({
+    name: '@nutri_alina',
+    niche: 'Нутрициология',
+    status: 'not_sent',
+    telegram_handle: null,
+    last_touch_at: null,
+    touch_count: 0,
+    first_contact_date: '2026-06-14',
+  }),
+  contact({
+    name: '@vocal_school',
+    niche: 'Вокал',
+    status: 'not_sent',
+    telegram_handle: 'vocal_school',
+    audience_size: '18k',
+    last_touch_at: null,
+    touch_count: 0,
+    offer_text: 'Привет! Видел твой набор в школу — сделаю разбор запуска и соберу воронку.',
+    first_contact_date: '2026-06-14',
+  }),
+  contact({
+    name: '@tarot_lena',
+    niche: 'Эзотерика',
+    status: 'not_sent',
+    telegram_handle: null,
+    last_touch_at: null,
+    touch_count: 0,
+    first_contact_date: '2026-08-30',
+  }),
+];
+
+/** Написанные сегодня: к ним ещё вернутся в ближайший час. */
+const SENT_TODAY: OutreachContact[] = [
+  contact({ name: '@pro_makeup', niche: 'Бьюти', status: 'sent', telegram_handle: 'pro_makeup' }),
+  contact({ name: '@dev_school', niche: 'IT', status: 'read', telegram_handle: 'dev_school' }),
 ];
 
 const ACTIVITY: ActivityEntry[] = [
@@ -210,7 +251,6 @@ export default function PreviewPage() {
   const [done, setDone] = useState<Record<string, boolean>>({ water: true, pushups: true });
   const [sort, setSort] = useState<TableSort | null>(null);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
-  const [chatOpen, setChatOpen] = useState(false);
 
   return (
     <main className="md:pl-[240px]">
@@ -318,13 +358,36 @@ export default function PreviewPage() {
           onCompleteReminder={() => undefined}
         />
 
+        <LeadIntake known={[]} leadCount={LEADS.length} onAdd={async () => 0} />
+
+        <LeadList
+          leads={LEADS}
+          offer={SNIPPETS[0]}
+          onPatch={() => undefined}
+          onSent={() => undefined}
+          onDrop={() => undefined}
+          onUseOffer={() => undefined}
+          canOwnOffer
+        />
+
+        <SentToday
+          contacts={SENT_TODAY}
+          onOpen={() => undefined}
+          onStatus={() => undefined}
+        />
+
+        <OfferBoard
+          snippets={SNIPPETS}
+          active={SNIPPETS[0]}
+          onPick={() => undefined}
+          onUse={() => undefined}
+        />
+
         <OutreachFilters
           filters={filters}
           onChange={setFilters}
           niches={nicheOptions(CONTACTS)}
         />
-
-        <DialogueCard contacts={CONTACTS} />
 
         <ContactCards contacts={CONTACTS} onOpenContact={() => undefined} highlightId={null} />
 
@@ -467,17 +530,8 @@ export default function PreviewPage() {
 
         {/* Шторка переписки: открывается кнопкой, потому что внутри её
             проверяют скроллом, разбором и стрелками порядка. */}
-        <button type="button" onClick={() => setChatOpen(true)} className="btn-ghost w-full">
-          Открыть переписку
-        </button>
       </div>
 
-      <ConversationSheet
-        contact={CONTACTS[0]}
-        open={chatOpen}
-        onClose={() => setChatOpen(false)}
-        onSave={() => undefined}
-      />
 
       <BottomNav />
     </main>

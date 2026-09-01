@@ -57,16 +57,7 @@ import type { OutreachContact } from '@/lib/types';
 import { isRound, milestonesCrossed, milestoneWeight, pickNudge, roundTarget } from '@/lib/round';
 import { ACCENT_KEYS } from '@/lib/accent';
 import {
-  assignRoles,
-  authorsOf,
-  chatIssues,
-  chatMetrics,
-  chatScore,
-  CHAT_ISSUE_IDS,
-  digestChats,
-  parseChat,
   parseMessages,
-  type ChatMessage,
 } from '@/lib/conversation';
 import {
   activeCount,
@@ -132,7 +123,6 @@ import {
   daysBetween,
   formatTimeLeft,
   getLogicalDate,
-  formatDateSmart,
   minutesUntilDayEnd,
   shiftDate,
   weekDates,
@@ -167,19 +157,14 @@ import {
 import { forecast, FORECAST_MIN_SENT, reachedAt, type ForecastContact } from '@/lib/forecast';
 import { assetsOf, externalHref, formatNumber, hasAssets, stagesOf } from '@/lib/project';
 import { snippetPreview, sortSnippets, totalUses } from '@/lib/snippets';
-import { instagramUrl, parseHandle, parseLeads, summarizeIntake } from '@/lib/leads';
 import {
-  daysLeft,
-  daysPassed,
-  goalProgress,
-  goalState,
-  newStepId,
-  remaining,
-  sortGoals,
-  stepProgress,
-  stepsOf,
-  timeProgress,
-} from '@/lib/goals';
+  instagramUrl,
+  offerForSend,
+  parseHandle,
+  parseLeads,
+  parseTelegram,
+  summarizeIntake,
+} from '@/lib/leads';
 import {
   audioPath,
   extForMime,
@@ -353,7 +338,7 @@ check('веха дешевле рекорда', XP.MILESTONE < XP.DAILY_RECORD, 
 check('мысль почти ничего не стоит', XP.NOTE_FIRST < XP.OUTREACH_SENT, true);
 
 section('Разблокировки по уровням');
-check('офферы с уровня 2', FEATURE_LEVEL.offers, 2);
+check('свой оффер с уровня 2', FEATURE_LEVEL.ownOffer, 2);
 check('ниши с уровня 3', FEATURE_LEVEL.niches, 3);
 check('скорость с уровня 4', FEATURE_LEVEL.speed, 4);
 check('проект с уровня 5', FEATURE_LEVEL.project, 5);
@@ -362,9 +347,9 @@ check('масштаб с уровня 7', FEATURE_LEVEL.scale, 7);
 check('тепловая карта с уровня 8', FEATURE_LEVEL.heatmap, 8);
 check('приоритет с уровня 9', FEATURE_LEVEL.prime, 9);
 check('апекс на двадцатом', FEATURE_LEVEL.apex, 20);
-check('на уровне 1 офферы закрыты', unlocked('offers', 1), false);
-check('на уровне 2 офферы открыты', unlocked('offers', 2), true);
-check('тизер после 1-го — офферы', nextLevelTeaser(1), 'offers');
+check('на уровне 1 свой оффер закрыт', unlocked('ownOffer', 1), false);
+check('на уровне 2 свой оффер открыт', unlocked('ownOffer', 2), true);
+check('тизер после 1-го — свой оффер', nextLevelTeaser(1), 'ownOffer');
 check('на каждом уровне со 2-го есть что открыть',
   Array.from({ length: MAX_LEVEL - 1 }, (_, i) => featureAtLevel(i + 2)).every(Boolean), true);
 check('на максимуме тизера нет', nextLevelTeaser(MAX_LEVEL), null);
@@ -949,117 +934,13 @@ check(
 );
 
 /* -------------------------------------------------------------------------- */
-section('Переписка');
-
-const msg = (role: 'me' | 'them', text: string) => ({ role, text });
+section('Сообщения контакта');
 
 check('мусор из базы не роняет разбор', parseMessages(null).length, 0);
 check('объект вместо массива тоже', parseMessages({ role: 'me' }).length, 0);
 check('пустые сообщения отбрасываются', parseMessages([{ role: 'me', text: '   ' }]).length, 0);
 check('неизвестная роль считается своей', parseMessages([{ role: 'x', text: 'а' }])[0]?.role, 'me');
 check('нормальная запись проходит', parseMessages([{ role: 'them', text: ' да ' }])[0]?.text, 'да');
-
-const pasted = parseChat(
-  'Родион, [16.08.2025 14:03]\nпривет\nсмотрел твой запуск\n\nЭксперт, [16.08.2025 14:10]\nда, слушаю\n\nРодион, [16.08.2025 14:11]\nмогу помочь?',
-);
-check('экспорт разбирается на блоки', pasted.length, 3);
-check('многострочное сообщение склеивается', pasted[0]?.text, 'привет\nсмотрел твой запуск');
-check('авторы вытаскиваются по порядку', authorsOf(pasted), ['Родион', 'Эксперт']);
-check('роли расставляются по выбранному автору', assignRoles(pasted, 'Родион').map((m) => m.role), ['me', 'them', 'me']);
-check('текст без заголовков не разбирается', parseChat('просто текст').length, 0);
-check('заголовок без тела ничего не добавляет', parseChat('Родион, [16.08.2025 14:03]').length, 0);
-
-// Пользователь решил, что подпись «максимум 200» под полем — это лимит
-// символов. Лимит на количество сообщений, длина не режется нигде.
-check(
-  'длинное сообщение не режется при разборе',
-  parseChat('Родион, [16.08.2025 14:03]\n' + 'я'.repeat(2400))[0]?.text.length,
-  2400,
-);
-check(
-  'и не режется на обратном пути из базы',
-  parseMessages([{ role: 'them', text: 'я'.repeat(2400) }])[0]?.text.length,
-  2400,
-);
-check(
-  'лимит считает сообщения, а не символы',
-  parseChat(
-    Array.from({ length: 250 }, (_, i) => `Родион, [16.08.2025 14:03]\nm${i}`).join('\n'),
-  ).length,
-  200,
-);
-
-// Переписку вставляют кусками: скопировал две реплики, сохранил, вернулся
-// за следующими. Куски обязаны дописываться, а не заменять предыдущие.
-const chunks: ChatMessage[] = (() => {
-  let acc: ChatMessage[] = [];
-  for (const chunk of ['Родион, [1]\nраз', 'Эксперт, [2]\nдва', 'Родион, [3]\nтри']) {
-    acc = parseMessages([...acc, ...assignRoles(parseChat(chunk), 'Родион')]);
-  }
-  return acc;
-})();
-check('куски дописываются в конец', chunks.map((m) => m.text), ['раз', 'два', 'три']);
-check('и роли кусков не путаются', chunks.map((m) => m.role), ['me', 'them', 'me']);
-
-const goodChat = [msg('me', 'привет, смотрел запуск'), msg('them', 'да'), msg('me', 'могу разобрать. интересно?')];
-const goodMetrics = chatMetrics(goodChat);
-check('сообщения считаются по ролям', [goodMetrics.mine, goodMetrics.theirs], [2, 1]);
-check('последним написал ты', goodMetrics.lastRole, 'me');
-check('и закончил вопросом', goodMetrics.endsWithQuestion, true);
-check('монолога нет', goodMetrics.longestMonologue, 1);
-check('здоровый диалог без замечаний', chatIssues(goodMetrics), []);
-check('и с полным баллом', chatScore(goodMetrics), 100);
-
-const monologue = [msg('me', 'раз?'), msg('me', 'два'), msg('me', 'три')];
-check('три подряд — монолог', chatMetrics(monologue).longestMonologue, 3);
-check('монолог попадает в замечания', chatIssues(chatMetrics(monologue)).includes('monologue'), true);
-
-const waiting = [msg('me', 'привет?'), msg('them', 'а что именно?')];
-check('ход за тобой — главное замечание', chatIssues(chatMetrics(waiting))[0], 'ballTheirs');
-
-const deadEnd = [msg('them', 'ок'), msg('me', 'понял, спасибо')];
-check('тупик распознаётся', chatIssues(chatMetrics(deadEnd)).includes('deadEnd'), true);
-check('и вопроса в переписке нет', chatIssues(chatMetrics(deadEnd)).includes('noQuestion'), true);
-
-const wall = [msg('me', 'а'.repeat(600) + '?'), msg('them', 'ок')];
-check('стена текста распознаётся', chatIssues(chatMetrics(wall)).includes('wall'), true);
-
-// Одно слово в ответ не делает нормальную реплику стеной: без абсолютного
-// порога это правило ругалось бы на любой живой диалог.
-check(
-  'короткий ответ не делает тебя стеной',
-  chatIssues(chatMetrics([msg('me', 'привет, смотрел запуск. интересно?'), msg('them', 'да')])).includes('wall'),
-  false,
-);
-check(
-  'два сообщения против одного — ещё не перекос',
-  chatIssues(chatMetrics([msg('me', 'раз?'), msg('them', 'да'), msg('me', 'два?')])),
-  [],
-);
-check('пустая переписка без замечаний', chatIssues(chatMetrics([])), []);
-check('и без балла', chatScore(chatMetrics([])), 0);
-check('балл не уходит ниже нуля', chatScore(chatMetrics(
-  [msg('me', 'а'.repeat(600)), msg('me', 'б'.repeat(600)), msg('me', 'в'.repeat(600)), msg('them', 'ок')],
-)) >= 0, true);
-
-const digest = digestChats([goodChat, monologue, waiting, []]);
-check('пустые переписки не считаются', digest.chats, 3);
-check('монолог посчитан', digest.counts.monologue, 1);
-check('ждущие ответа посчитаны', digest.waiting, 1);
-check('самая частая ошибка найдена', Boolean(digest.worst), true);
-check('средний балл в границах', digest.averageScore >= 0 && digest.averageScore <= 100, true);
-check('на пустом входе сводка пустая', digestChats([]).chats, 0);
-check('и худшей ошибки нет', digestChats([]).worst, null);
-check(
-  'у каждой ошибки есть название и что делать (ru)',
-  CHAT_ISSUE_IDS.filter((id) => !ru.chat.issues[id] || !ru.chat.fixes[id]),
-  [],
-);
-check(
-  'у каждой ошибки есть название и что делать (en)',
-  CHAT_ISSUE_IDS.filter((id) => !en.chat.issues[id] || !en.chat.fixes[id]),
-  [],
-);
 
 /* -------------------------------------------------------------------------- */
 section('Напоминания');
@@ -1785,93 +1666,95 @@ check('сводка считает пропущенные', summarizeIntake(lead
 check('сводка на пустом вводе', summarizeIntake('', []), { added: 0, skipped: 0 });
 
 /* -------------------------------------------------------------------------- */
-section('Цели: срок, доли и шаги');
+section('База не просрочена, пока по ней не прошли');
 
-const goal = (over: Partial<Parameters<typeof goalProgress>[0]> = {}) => ({
-  target_amount: 30000 as number | null,
-  current_amount: 0,
-  deadline: '2026-09-13',
-  started_at: '2026-08-14',
-  done: false,
-  ...over,
-});
+/*
+ * Главный баг базы: у last_touch_at в схеме стоял default current_date,
+ * поэтому найденный аккаунт сразу выглядел «тронутым». База лежит неделями —
+ * это её нормальная жизнь. Но в день, когда по ней проходишь, человек
+ * открывался просроченным на месяц: каскад 1/3/7/15/30 считал от даты
+ * находки, а не от даты сообщения.
+ */
+const lead = (over: Partial<Parameters<typeof followUpState>[0]> = {}) =>
+  followUpState({
+    status: 'not_sent',
+    lastTouchAt: null,
+    touchCount: 0,
+    muted: false,
+    today: '2026-09-01',
+    ...over,
+  });
 
-const TODAY = '2026-08-23';
+check('свежий лид не требует касания', lead().urgency, 'none');
+check(
+  'лид, пролежавший три месяца, тоже',
+  lead({ lastTouchAt: '2026-06-01', touchCount: 1 }).urgency,
+  'none',
+);
+// Написал сегодня — первое касание завтра: это «soon», а не просрочка.
+check(
+  'написанный сегодня ждёт до завтра',
+  lead({ status: 'sent', lastTouchAt: '2026-09-01', touchCount: 1 }).urgency,
+  'soon',
+);
+check(
+  'и просрочки на нём нет',
+  lead({ status: 'sent', lastTouchAt: '2026-09-01', touchCount: 1 }).daysUntil >= 0,
+  true,
+);
+check(
+  'через день после письма — пора',
+  lead({ status: 'sent', lastTouchAt: '2026-08-31', touchCount: 1 }).urgency,
+  'due',
+);
+/*
+ * То же, но через дату находки: так вело себя приложение до правки —
+ * человек, найденный в июне и написанный сегодня, открывался просроченным.
+ * Проверка держит именно эту разницу.
+ */
+check(
+  'а от даты находки была бы',
+  lead({ status: 'sent', lastTouchAt: '2026-06-01', touchCount: 1 }).urgency,
+  'overdue',
+);
+check(
+  'без даты касания каскад не стартует вовсе',
+  lead({ status: 'sent', lastTouchAt: null, touchCount: 1 }).urgency,
+  'none',
+);
 
-check('до срока три недели', daysLeft('2026-09-13', TODAY), 21);
-check('срок вышел вчера', daysLeft('2026-08-22', TODAY), -1);
-check('день старта уже день', daysPassed('2026-08-23', TODAY), 1);
-check('десятый день работы', daysPassed('2026-08-14', TODAY), 10);
+/* -------------------------------------------------------------------------- */
+section('Ник телеграма: собаку ставит интерфейс');
 
-check('прогресс пустой цели', goalProgress(goal()), 0);
-check('прогресс наполовину', goalProgress(goal({ current_amount: 15000 })), 50);
-check('перебор не даёт больше ста', goalProgress(goal({ current_amount: 45000 })), 100);
-check('закрытая цель — сто', goalProgress(goal({ done: true })), 100);
-// Цель без суммы либо сделана, либо нет: середины у неё не бывает.
-check('цель без суммы до закрытия', goalProgress(goal({ target_amount: null })), 0);
-check('цель без суммы закрыта', goalProgress(goal({ target_amount: null, done: true })), 100);
+check('голый ник проходит как есть', parseTelegram('ivanov'), 'ivanov');
+check('собака снимается', parseTelegram('@ivanov'), 'ivanov');
+check('две собаки тоже', parseTelegram('@@ivanov'), 'ivanov');
+check('ссылка t.me', parseTelegram('https://t.me/ivanov'), 'ivanov');
+check('ссылка без протокола', parseTelegram('t.me/ivanov'), 'ivanov');
+check('хвост параметров отрезается', parseTelegram('https://t.me/ivanov?start=1'), 'ivanov');
+check('telegram.me тоже ссылка', parseTelegram('telegram.me/ivanov'), 'ivanov');
+check('пробелы по краям', parseTelegram('  @ivanov  '), 'ivanov');
+check('точки и дефисы в нике невозможны', parseTelegram('iva-nov.x'), 'ivanovx');
+check('пусто остаётся пустым', parseTelegram(''), '');
+check('приглашение в канал ником не является', parseTelegram('t.me/joinchat/AAA'), '');
+check('и ссылка-плюс тоже', parseTelegram('t.me/+79990000000'), '');
+check('длина ника ограничена', parseTelegram('a'.repeat(60)).length, 32);
+// Разбор обязан быть идемпотентным: поле прогоняет через него каждое нажатие
+// клавиши, и второй проход не должен ничего доедать.
+check('повторный разбор ничего не меняет', parseTelegram(parseTelegram('@ivanov')), 'ivanov');
 
-check('остаток', remaining(goal({ current_amount: 12400 })), 17600);
-check('остатка нет', remaining(goal({ current_amount: 30000 })), 0);
-check('перебор не даёт отрицательного', remaining(goal({ current_amount: 45000 })), 0);
+/* -------------------------------------------------------------------------- */
+section('Какой оффер записан человеку');
 
-// Вторая половина честного ответа на «успеваю ли я»: сколько срока прошло.
-// Прогноза здесь нет намеренно — один эксперт может дать два миллиона, а
-// десять ноль, и предсказывать приход денег значит врать точным числом.
-check('доля срока', timeProgress(goal(), TODAY), 30);
-check('в день старта срок не начался', timeProgress(goal({ started_at: TODAY }), TODAY), 0);
-check('после дедлайна — сто', timeProgress(goal({ deadline: '2026-08-20' }), TODAY), 100);
-check('дедлайн раньше старта не ломает', timeProgress(goal({ deadline: '2026-08-01' }), TODAY), 100);
-
-// Деньги приходят кусками, поэтому отставанием считается расхождение
-// больше пяти пунктов, а не любое.
-check('деньга обгоняет время', goalState(goal({ current_amount: 15000 }), TODAY), 'ahead');
-check('деньга отстаёт от времени', goalState(goal({ current_amount: 3000 }), TODAY), 'behind');
-check('идёшь вровень', goalState(goal({ current_amount: 9000 }), TODAY), 'ontrack');
-check('закрытая цель', goalState(goal({ done: true }), TODAY), 'done');
-check('срок вышел', goalState(goal({ deadline: '2026-08-20' }), TODAY), 'overdue');
-check('цель без суммы просто идёт', goalState(goal({ target_amount: null }), TODAY), 'ontrack');
-// Нулевой прогресс в первые дни — это не отставание, а ещё не начатая работа.
-check('работа только началась', goalState(goal({ started_at: '2026-08-22' }), TODAY), 'fresh');
-
-const steps = [
-  { id: 'a', title: 'Закрыть эксперта', done: true },
-  { id: 'b', title: 'Подписать договор', done: true },
-  { id: 'c', title: 'Сделать запуск', done: false },
-];
-check('прогресс по шагам', stepProgress(steps), { done: 2, total: 3, pct: 67 });
-check('шагов нет — ноль', stepProgress([]), { done: 0, total: 0, pct: 0 });
-
-// В jsonb может лежать что угодно: null у старых строк, объект после правки
-// руками. Экран не должен падать ни на том, ни на другом.
-check('шаги из jsonb', stepsOf({ steps }).length, 3);
-check('null вместо шагов не роняет', stepsOf({ steps: null }), []);
-check('объект вместо шагов не роняет', stepsOf({ steps: {} }), []);
-check('мусор в массиве отсеивается', stepsOf({ steps: [null, 1, { title: 'ок', id: 'x', done: false }] }).length, 1);
-check('id шага уникален', newStepId() !== newStepId(), true);
-
-const goals = [
-  { deadline: '2026-11-01', done: false },
-  { deadline: '2026-09-13', done: false },
-  { deadline: '2026-08-01', done: true },
-  { deadline: '2026-10-01', done: false },
-];
-check('незакрытые по сроку, закрытые в конец', sortGoals(goals).map((g) => g.deadline), [
-  '2026-09-13',
-  '2026-10-01',
-  '2026-11-01',
-  '2026-08-01',
-]);
-check('исходный список не меняется', (() => {
-  const list = [{ deadline: '2026-11-01', done: false }, { deadline: '2026-09-13', done: false }];
-  sortGoals(list);
-  return list[0].deadline;
-})(), '2026-11-01');
-
-// Прогноз по цели уезжает на год вперёд, и «16 июн.» без года читается как
-// ближайший июнь — то есть ровно наоборот тому, что произошло.
-check('в этом году год не пишем', formatDateSmart('2026-09-13', '2026-08-23', 'ru'), '13 сент.');
-check('в другом году пишем', formatDateSmart('2027-06-16', '2026-08-23', 'ru'), '16 июн. 2027');
+check('свой текст побеждает заготовку', offerForSend('мой', 'общий'), 'мой');
+check('без своего пишется заготовка', offerForSend('', 'общий'), 'общий');
+check('пробелы своим текстом не считаются', offerForSend('   ', 'общий'), 'общий');
+check('нет ни того ни другого — пусто', offerForSend('', ''), null);
+check('null не превращается в строку', offerForSend(null, null), null);
+check('края обрезаются', offerForSend('  мой  ', null), 'мой');
+// Заготовка записывается и тогда, когда её не трогали: иначе у половины
+// ответивших через неделю не видно, на что они отвечали.
+check('заготовка пишется без правки', offerForSend(null, 'общий'), 'общий');
 
 /* -------------------------------------------------------------------------- */
 section('Время на задачу');

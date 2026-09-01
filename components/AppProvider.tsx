@@ -14,13 +14,13 @@ import {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { applyAccent, readAccent } from '@/lib/accent';
-import { parseMessages, type ChatMessage } from '@/lib/conversation';
+import { parseMessages } from '@/lib/conversation';
 import { FirstEventOverlay, type FirstEventKind } from '@/components/overlays/FirstEventOverlay';
 import { LevelUpOverlay } from '@/components/overlays/LevelUpOverlay';
 import { QuotaClosedOverlay } from '@/components/overlays/QuotaClosedOverlay';
 import { Toast, type ToastData, type ToastTone } from '@/components/overlays/Toast';
 import { useLanguage } from '@/components/LanguageProvider';
-import { cycleDay, formatDayMonth, getLogicalDate, minutesUntilDayEnd, shiftDate } from '@/lib/date';
+import { cycleDay, getLogicalDate, minutesUntilDayEnd, shiftDate } from '@/lib/date';
 import { celebrate, vibrate } from '@/lib/feedback';
 import {
   isReplyStatus,
@@ -149,7 +149,6 @@ type AppContextValue = {
   remindersDue: number;
 
   /** false — колонки переписки ещё нет (не прогнали migration-v6). */
-  conversationsReady: boolean;
 
   quota: QuotaState;
   /** Состояние страховки серии: заряды щита, привал, таймер сгорания дня. */
@@ -166,7 +165,7 @@ type AppContextValue = {
   /** Завести пачку найденных аккаунтов в базу. Возвращает, сколько добавилось. */
   addLeads: (leads: { name: string; instagram_url: string }[], niche: string) => Promise<number>;
   /** Написали человеку из базы: рассылка ушла со всеми последствиями. */
-  markSent: (contact: OutreachContact) => Promise<void>;
+  markSent: (contact: OutreachContact, offerText?: string | null) => Promise<void>;
   updateContact: (id: string, patch: Partial<OutreachContact>) => Promise<void>;
   setStatus: (contact: OutreachContact, status: ContactStatus) => Promise<void>;
   deleteContact: (id: string) => Promise<void>;
@@ -175,7 +174,6 @@ type AppContextValue = {
   /** Больше не напоминать про этот контакт. */
   muteContact: (id: string, muted: boolean) => Promise<void>;
   /** Сохранить переписку целиком. */
-  saveConversation: (id: string, messages: ChatMessage[]) => Promise<void>;
 
   /** Задачи, отложенные на завтра. Утром они сами станут задачами дня. */
   tomorrowTasks: DailyTask[];
@@ -255,7 +253,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [remindersReady, setRemindersReady] = useState(true);
-  const [conversationsReady, setConversationsReady] = useState(true);
   const [shieldReady, setShieldReady] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -429,12 +426,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setShieldReady('shield_charges' in (loadedProfile as object));
 
     const loadedContacts = (contactsRes.data as OutreachContact[]) ?? [];
-
-    // Колонка переписки появилась в migration-v6. Пока её нет, поле просто
-    // не приходит — раздел прячется, всё остальное работает как работало.
-    setConversationsReady(
-      loadedContacts.length === 0 || 'conversation' in (loadedContacts[0] as object),
-    );
 
     // Статусы из базы могут быть старой шкалы («Отказ» до migration-v5) —
     // приводим их сразу на входе, чтобы ниже по коду вариант был ровно один.
@@ -1065,6 +1056,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
           next_step: draft.next_step || null,
           status: draft.status,
           first_contact_date: draft.first_contact_date,
+          /*
+           * Дату касания ставим руками: default у колонки снят ради базы,
+           * которой касаться нельзя. Здесь человеку уже написали, и каскад
+           * обязан отсчитываться от даты письма — она же может быть вчерашней,
+           * если рассылку заводят задним числом.
+           */
+          last_touch_at: draft.status === 'not_sent' ? null : draft.first_contact_date,
+          touch_count: draft.status === 'not_sent' ? 0 : 1,
           status_history: [{ status: draft.status, at: now }],
         } as never)
         .select('*')
@@ -1077,22 +1076,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const contact = { ...(data as OutreachContact), status: normalizeStatus(data.status) };
       setContacts((previous) => [contact, ...previous]);
-
-      // Текст рассылки сразу уходит в библиотеку офферов и привязывается к
-      // контакту. Дальше результат оффера тянется за статусом сам (триггер в
-      // базе), поэтому вручную помечать «сработало / не сработало» не нужно —
-      // закономерности собираются из реальных исходов.
-      if (draft.comment.trim()) {
-        const label = (draft.niche || draft.name).trim();
-        await supabase.from('offers').insert({
-          user_id: user.id,
-          contact_id: contact.id,
-          title: `${label} · ${formatDayMonth(draft.first_contact_date, 'ru')}`,
-          niche: draft.niche || null,
-          content: draft.comment.trim(),
-          result: draft.status,
-        } as never);
-      }
 
       await logActivity('sent', { name: contact.name, niche: contact.niche });
 
@@ -1130,6 +1113,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
             instagram_url: lead.instagram_url,
             status: 'not_sent' as const,
             first_contact_date: today,
+            /*
+             * Касания не было — и до отправки быть не может.
+             *
+             * В базе у колонки стоял default current_date, поэтому найденный
+             * аккаунт сразу выглядел «тронутым». База лежит неделями, это её
+             * нормальная жизнь; но в день, когда по ней проходишь, человек
+             * открывался просроченным на месяц — каскад считал от даты
+             * находки. Пишем null явно, чтобы это не зависело от схемы.
+             */
+            last_touch_at: null,
+            touch_count: 0,
             status_history: [{ status: 'not_sent', at: nowIso }],
           })) as never,
         )
@@ -1162,13 +1156,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * когда аккаунт нашёлся.
    */
   const markSent = useCallback(
-    async (contact: OutreachContact) => {
+    async (contact: OutreachContact, offerText?: string | null) => {
       const nowIso = new Date().toISOString();
       const patch: Partial<OutreachContact> = {
         status: 'sent',
         first_contact_date: today,
+        /*
+         * Каскад дожимов начинается ровно здесь.
+         *
+         * Сообщение ушло сегодня — значит, и первое напоминание считается от
+         * сегодня, сколько бы аккаунт до этого ни лежал в базе.
+         */
+        last_touch_at: today,
+        touch_count: 1,
         status_history: [...(contact.status_history ?? []), { status: 'sent', at: nowIso }],
       };
+
+      // Какой именно текст ушёл. Без этого ответ не связать с формулировкой,
+      // а тексты пробуются разные — в этом весь смысл.
+      const offer = (offerText ?? '').trim();
+      if (offer) patch.offer_text = offer;
 
       setContacts((previous) =>
         previous.map((c) => (c.id === contact.id ? { ...c, ...patch } : c)),
@@ -1313,32 +1320,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [supabase],
   );
 
-  /**
-   * Переписка сохраняется целиком, а не по сообщению.
-   *
-   * Реплики переставляют и удаляют — частичные апдейты здесь означали бы
-   * сверку порядка на две стороны. Диалог короткий, и переписать его
-   * одним запросом дешевле любой синхронизации.
-   */
-  const saveConversation = useCallback(
-    async (id: string, messages: ChatMessage[]) => {
-      setContacts((previous) =>
-        previous.map((c) => (c.id === id ? { ...c, conversation: messages } : c)),
-      );
-
-      const { error: saveError } = await supabase
-        .from('outreach_contacts')
-        .update({ conversation: messages } as never)
-        .eq('id', id);
-
-      if (saveError) {
-        // Колонки может не быть, если migration-v6 ещё не прогнали.
-        setConversationsReady(false);
-        setError(humanError(saveError.message));
-      }
-    },
-    [supabase],
-  );
 
   /* ------------------------------------------------------------------ */
   /*  Задачи дня                                                         */
@@ -1725,7 +1706,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       reminders,
       remindersReady,
       remindersDue,
-      conversationsReady,
       quota,
       guard,
       chain: profile?.chain_days ?? 0,
@@ -1741,7 +1721,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       deleteContact,
       touchContact,
       muteContact,
-      saveConversation,
       addTask,
       toggleTask,
       deleteTask,
@@ -1769,10 +1748,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [
       user, profile, today, now, loading, error, contacts, activity, tasks, homeTasks,
       tomorrowTasks, logs, todayLog,
-      reminders, remindersReady, remindersDue, conversationsReady,
+      reminders, remindersReady, remindersDue,
       quota, guard, levelInfo, cycleDayNumber, sentTotal, can,
       addContact, addLeads, markSent, updateContact, setStatus, deleteContact, touchContact, muteContact,
-      saveConversation,
       addTask, toggleTask, deleteTask, toggleHomeTask, completeTask, reloadProjectTasks,
       addReminder, updateReminder, toggleReminder, deleteReminder,
       toggleHabit, saveDay, submitModeCheckin, breakMode, modeCounters,

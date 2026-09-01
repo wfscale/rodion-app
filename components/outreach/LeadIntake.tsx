@@ -3,14 +3,16 @@
 import { motion } from 'framer-motion';
 import { Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { CardTitle, GlassCard } from '@/components/GlassCard';
+import { GlassCard } from '@/components/GlassCard';
 import { useLanguage } from '@/components/LanguageProvider';
-import { Button, Field } from '@/components/ui';
+import { Button, Collapsible, Field } from '@/components/ui';
 import { parseLeads, summarizeIntake } from '@/lib/leads';
 
 type LeadIntakeProps = {
   /** Ники, которые уже есть: и в базе, и среди написанных. */
   known: string[];
+  /** Сколько человек уже лежит в базе: определяет, свёрнут ли сбор. */
+  leadCount: number;
   onAdd: (leads: { name: string; instagram_url: string }[], niche: string) => Promise<number>;
   delay?: number;
 };
@@ -24,7 +26,7 @@ type LeadIntakeProps = {
  * как придётся, а чистить руками — ровно та работа, от которой список и
  * должен избавлять.
  */
-export function LeadIntake({ known, onAdd, delay = 0 }: LeadIntakeProps) {
+export function LeadIntake({ known, leadCount, onAdd, delay = 0 }: LeadIntakeProps) {
   const { t, tf } = useLanguage();
 
   const [text, setText] = useState('');
@@ -55,8 +57,19 @@ export function LeadIntake({ known, onAdd, delay = 0 }: LeadIntakeProps) {
 
   return (
     <GlassCard delay={delay}>
-      <CardTitle>{t.leads.title}</CardTitle>
+      {/*
+        Сбор свёрнут, пока база не пуста.
 
+        Собирать и писать — два разных занятия и два разных дня: аккаунты
+        находят пачкой, проходят по ним потом. Развёрнутая форма на пять
+        строк каждый раз отодвигала бы саму работу вниз ровно в те дни,
+        когда собирать ничего не надо.
+      */}
+      <Collapsible
+        storageKey="rodion.leads.intake"
+        defaultOpen={leadCount === 0}
+        title={t.leads.intakeTitle}
+      >
       <div className="space-y-3">
         <Field
           label={t.leads.niche}
@@ -108,6 +121,7 @@ export function LeadIntake({ known, onAdd, delay = 0 }: LeadIntakeProps) {
           <p className="text-xs leading-relaxed text-white/25">{t.leads.duplicates}</p>
         )}
       </div>
+      </Collapsible>
     </GlassCard>
   );
 }

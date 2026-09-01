@@ -135,7 +135,7 @@ export function thresholdFor(level: number): number {
 // реально работающий раздел или правило игры, а не обещание.
 // ---------------------------------------------------------------------------
 export type FeatureKey =
-  | 'offers'       // 2  — библиотека офферов (+ разбор паттернов внутри)
+  | 'ownOffer'     // 2  — свой текст оффера под конкретного человека
   | 'niches'       // 3  — аналитика по нишам
   | 'speed'        // 4  — счётчик скорости + «следующий шаг»
   | 'project'      // 5  — раздел «Проект»
@@ -156,7 +156,7 @@ export type FeatureKey =
   | 'apex';        // 20 — всё открыто
 
 export const FEATURE_LEVEL: Record<FeatureKey, number> = {
-  offers: 2,
+  ownOffer: 2,
   niches: 3,
   speed: 4,
   project: 5,
