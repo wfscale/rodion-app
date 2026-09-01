@@ -1,7 +1,6 @@
 'use client';
 
 import { Minimize2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useApp } from '@/components/AppProvider';
 import { BurnTimer } from '@/components/guard/BurnTimer';
@@ -15,20 +14,16 @@ import { QuickAddOutreach } from '@/components/home/QuickAddOutreach';
 import { RoundNudge } from '@/components/home/RoundNudge';
 import { useLanguage } from '@/components/LanguageProvider';
 import type { ContactDraft } from '@/components/outreach/ContactSheet';
-import { SoberMode } from '@/components/sober/SoberMode';
 import { Button, DeskColumns, FullPageLoader, useStickyState } from '@/components/ui';
 import { useFocusSession } from '@/components/session/SessionProvider';
 import { formatShortDate } from '@/lib/date';
-import { daysUntilDeadline } from '@/lib/mode';
 
 export default function HomePage() {
   const { t, lang } = useLanguage();
-  const router = useRouter();
   const app = useApp();
   const session = useFocusSession();
 
   const [adding, setAdding] = useState(false);
-  const [sober, setSober] = useState(false);
 
   // Режим фокуса — перк 14-го уровня. Состояние переживает перезагрузку:
   // включил фокус и закрыл приложение — вернёшься в фокус.
@@ -47,7 +42,6 @@ export default function HomePage() {
   if (app.loading || !app.profile) return <FullPageLoader />;
 
   const profile = app.profile;
-  const daysLeft = daysUntilDeadline(profile.deadline_date, app.today);
   const canFocus = app.can('focus');
   const focusOn = canFocus && focus;
 
@@ -80,15 +74,20 @@ export default function HomePage() {
 
 
       {/*
-        Две колонки на мониторе: слева всё, чем работают руками, справа фон
-        дня. В одну колонку главная уезжала на два экрана вниз при том, что
-        физически помещается целиком.
+        Две колонки на мониторе: слева день и работа, справа планы и картина.
+
+        sideFirst — ради телефона. На мониторе ничего не меняется, а на
+        телефоне колонки встают одна за другой, и правая идёт первой: с
+        телефона сюда заходят записать задачу, а не делать рассылки. Без
+        этого задачи оказывались в полутора экранах ниже — то есть ровно за
+        тем поворотом, за которым про них и забывают.
 
         В режиме фокуса правая колонка пуста — в этом и смысл фокуса, — и
         левая растягивается на всю ширину сама: пустой колонки в сетке нет.
       */}
       <DeskColumns
         panes
+        sideFirst
         main={
           <>
             {/* Счётчик рассылок — главный элемент экрана, всё остальное фон. */}
@@ -150,29 +149,6 @@ export default function HomePage() {
 
             <QuickAddOutreach today={app.today} onAdd={handleQuickAdd} busy={adding} />
 
-            {/* Задачи дня и дневные задачи проектов приходят одним списком:
-                работа по проекту и есть работа дня. */}
-            <DailyTasks
-              tasks={app.homeTasks}
-              tomorrow={app.tomorrowTasks}
-              onAdd={(text, forTomorrow, minutes) =>
-                void app.addTask(text, forTomorrow, minutes)
-              }
-              onToggle={(task) => void app.toggleHomeTask(task)}
-              onDelete={(task) => void app.deleteTask(task.id)}
-              onDeleteTomorrow={(id) => void app.deleteTask(id)}
-              timerBusy={Boolean(session.session)}
-              onStartTimer={(task) =>
-                session.start({
-                  kind: 'task',
-                  label: task.text,
-                  minutes: task.minutes ?? 0,
-                  taskId: task.id,
-                  taskSource: task.source,
-                })
-              }
-            />
-
             {focusOn && (
               <Button variant="ghost" full onClick={() => setFocus(false)}>
                 <Minimize2 size={16} />
@@ -185,23 +161,48 @@ export default function HomePage() {
           focusOn ? null : (
             <>
               {/*
+                Задачи дня — первыми в правой колонке.
+
+                Это единственный блок на главной, в который что-то пишут, а
+                не смотрят. Всё остальное справа — картина и след дня, и
+                стоять выше того, ради чего сюда заходят вечером, они не
+                должны. На телефоне колонка идёт следом за рабочей, и задачи
+                оказываются первым, что видно после счётчика.
+              */}
+              <DailyTasks
+                tasks={app.homeTasks}
+                tomorrow={app.tomorrowTasks}
+                onAdd={(text, forTomorrow, minutes) =>
+                  void app.addTask(text, forTomorrow, minutes)
+                }
+                onToggle={(task) => void app.toggleHomeTask(task)}
+                onDelete={(task) => void app.deleteTask(task.id)}
+                onDeleteTomorrow={(id) => void app.deleteTask(id)}
+                timerBusy={Boolean(session.session)}
+                onStartTimer={(task) =>
+                  session.start({
+                    kind: 'task',
+                    label: task.text,
+                    minutes: task.minutes ?? 0,
+                    taskId: task.id,
+                    taskSource: task.source,
+                  })
+                }
+              />
+
+              {/*
                 Как идёт — картина происходящего.
 
-                Стоит первой в правой колонке: счётчик слева отвечает про
-                сегодня, лента ниже — про последний час, а на вопрос «растёшь
-                или стоишь» до этого отвечала только страница прогресса, куда
-                за этим никто не ходит.
+                Под задачами: счётчик слева отвечает про сегодня, лента
+                ниже — про последний час, а на вопрос «как вообще идёт» до
+                этого отвечала только страница прогресса, куда за этим никто
+                не ходит.
               */}
               <PulseCard contacts={app.contacts} today={app.today} />
 
               {/* Компонент рисует свою карточку сам: вложенный backdrop-filter
                   в Safari на iOS схлопывается в белый прямоугольник. */}
               <ActivityFeed entries={app.activity} />
-
-              {/* Трезвый режим — экстренная кнопка, должна быть под рукой. */}
-              <Button variant="ghost" full onClick={() => setSober(true)}>
-                {t.home.soberMode}
-              </Button>
 
               {canFocus && (
                 <Button variant="ghost" full onClick={() => setFocus(true)}>
@@ -213,15 +214,6 @@ export default function HomePage() {
         }
       />
 
-      <SoberMode
-        open={sober}
-        daysLeft={daysLeft}
-        onClose={() => setSober(false)}
-        onOpenOutreach={() => {
-          setSober(false);
-          router.push('/outreach');
-        }}
-      />
     </div>
   );
 }

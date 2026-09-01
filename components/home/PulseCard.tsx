@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { useMemo } from 'react';
 import { CardTitle, GlassCard } from '@/components/GlassCard';
 import { useLanguage } from '@/components/LanguageProvider';
-import { compareWindows, dailySeries, funnelTotals } from '@/lib/insights';
+import { bestWindow, dailySeries, funnelTotals } from '@/lib/insights';
 import type { OutreachContact } from '@/lib/types';
 
 /**
@@ -42,11 +42,20 @@ export function PulseCard({ contacts, today, delay = 0 }: PulseCardProps) {
   const funnel = useMemo(() => funnelTotals(contacts), [contacts]);
 
   /*
-   * Скользящие семь дней, а не календарная неделя: по календарю текущая
-   * всегда неполная и в среду обязана проигрывать прошлой. Считается из
-   * того же ряда, что нарисован выше, — цифра всегда про этот график.
+   * Последние семь дней и личный рекорд семёрки.
+   *
+   * Сравнения с прошлым периодом здесь нет намеренно. Оно обязано
+   * регулярно выдавать минус — не каждая неделя сильнее предыдущей, — и
+   * бьёт ровно по тому, кто в этот момент работает нормально. Рекорд так
+   * себя вести не может: он либо побит, либо стоит впереди планкой. Вниз
+   * не идёт никогда.
    */
-  const { recent, previous, delta } = useMemo(() => compareWindows(days, HALF), [days]);
+  const recent = useMemo(
+    () => days.slice(days.length - HALF).reduce((acc, d) => acc + d.sent, 0),
+    [days],
+  );
+  const record = useMemo(() => bestWindow(contacts, today, HALF), [contacts, today]);
+  const isRecord = recent > 0 && recent >= record;
 
   const peak = Math.max(1, ...days.map((d) => d.sent));
   const active = days.filter((d) => d.sent > 0).length;
@@ -93,27 +102,24 @@ export function PulseCard({ contacts, today, delay = 0 }: PulseCardProps) {
       </div>
 
       <p className="mt-2 text-xs text-white/30">
-        {tf(t.pulse.active, { n: active, of: DAYS })} · {tf(t.pulse.peak, { n: peak })}
+        {tf(t.pulse.active, { n: active })} · {tf(t.pulse.peak, { n: peak })}
       </p>
 
-      {/* Сравнение, которое человек может подтвердить памятью: он помнит,
-          как шла прошлая неделя. */}
+      {/* Семь дней и планка. Ни одного числа, которое может уйти в минус. */}
       <div className="mt-3 flex items-baseline gap-2 border-t border-divider pt-3">
         <span className="text-sm text-white/45">{t.pulse.week}</span>
-        <span className="text-xl font-extrabold tabular-nums">{recent}</span>
-        {delta !== null && previous > 0 && (
-          <span
-            className={`text-sm font-bold tabular-nums ${
-              delta > 0 ? 'text-success' : delta < 0 ? 'text-white/40' : 'text-white/30'
-            }`}
-          >
-            {delta > 0 ? '+' : ''}
-            {delta}%
+        <span className={`text-xl font-extrabold tabular-nums ${isRecord ? 'text-success' : ''}`}>
+          {recent}
+        </span>
+        {isRecord ? (
+          <span className="rounded-full bg-[rgba(100,255,140,0.14)] px-2 py-0.5 text-xs font-extrabold text-success">
+            {t.pulse.record}
+          </span>
+        ) : (
+          <span className="ml-auto text-xs tabular-nums text-white/25">
+            {tf(t.pulse.best, { n: record })}
           </span>
         )}
-        <span className="ml-auto text-xs tabular-nums text-white/25">
-          {tf(t.pulse.lastWeek, { n: previous })}
-        </span>
       </div>
 
       {/* Воронка за всё время: четыре числа, от объёма к деньгам. */}

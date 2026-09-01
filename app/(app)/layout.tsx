@@ -25,7 +25,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         ~1700px читается хуже, сколько бы места ни было.
       */}
       <main className="md:pl-[240px]">
-        <div className="pb-content mx-auto w-full max-w-lg px-4 pt-[calc(16px+env(safe-area-inset-top))] md:max-w-none md:px-8 md:pb-16 md:pt-10 xl:px-10 2xl:max-w-[1720px]">
+        <div className="pb-content mx-auto w-full max-w-lg px-4 pt-[calc(16px+env(safe-area-inset-top))] md:max-w-none md:px-8 md:pb-6 md:pt-10 xl:px-10 2xl:max-w-[1720px]">
           {children}
         </div>
       </main>
