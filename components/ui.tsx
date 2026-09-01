@@ -283,6 +283,15 @@ type CollapsibleProps = {
   /** Ключ в localStorage; без него состояние живёт только до перезагрузки. */
   storageKey?: string;
   defaultOpen?: boolean;
+  /**
+   * Управляемый режим: состояние держит страница.
+   *
+   * Нужен, когда блок разворачивает не только его собственный заголовок —
+   * например, тап по нише обязан открыть список экспертов, иначе разбор
+   * заканчивается ничем.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   children: ReactNode;
   className?: string;
 };
@@ -299,13 +308,22 @@ export function Collapsible({
   right,
   storageKey,
   defaultOpen = true,
+  open: controlledOpen,
+  onOpenChange,
   children,
   className = '',
 }: CollapsibleProps) {
   // Без явного ключа состояние привязывается к экземпляру: два блока без
   // ключа не должны сворачиваться и разворачиваться вместе.
   const fallbackKey = useId();
-  const [open, setOpen] = useStickyState(storageKey ?? `collapsible:${fallbackKey}`, defaultOpen);
+  const [ownOpen, setOwnOpen] = useStickyState(
+    storageKey ?? `collapsible:${fallbackKey}`,
+    defaultOpen,
+  );
+
+  const controlled = controlledOpen !== undefined;
+  const open = controlled ? controlledOpen : ownOpen;
+  const setOpen = controlled ? (onOpenChange ?? (() => undefined)) : setOwnOpen;
 
   return (
     <div className={className}>
@@ -413,10 +431,23 @@ export function DeskColumns({
     </div>
   );
 
+  /*
+   * Липкая колонка обязана иметь свою прокрутку.
+   *
+   * Без max-height sticky прижимает колонку к верху и всё, что не влезло в
+   * экран, становится недостижимым: страница листается, а колонка стоит.
+   * Щит и привал лежали как раз в этой мёртвой зоне — до них нельзя было
+   * добраться вообще никак.
+   *
+   * overscroll-contain: докрутив колонку до конца, прокрутка не
+   * перескакивает на страницу. Колонки крутятся по отдельности.
+   */
   const sideCol = (
     <div
       className={`min-w-0 space-y-4 ${sideFirst ? 'lg:col-start-2 lg:row-start-1' : ''} ${
-        stickySide ? 'lg:sticky lg:top-10' : ''
+        stickySide
+          ? 'lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1 thin-scrollbar'
+          : ''
       }`}
     >
       {side}

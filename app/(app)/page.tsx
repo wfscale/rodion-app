@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useApp } from '@/components/AppProvider';
 import { BurnTimer } from '@/components/guard/BurnTimer';
+import { ShieldCard } from '@/components/guard/ShieldCard';
 import { ActivityFeed } from '@/components/home/ActivityFeed';
 import { DailyTasks } from '@/components/home/DailyTasks';
 import { HabitsBlock } from '@/components/home/HabitsBlock';
@@ -117,6 +118,26 @@ export default function HomePage() {
               quota={app.quota.quota}
               streak={profile.quota_streak ?? 0}
               onArm={() => void app.armShield()}
+            />
+
+            {/*
+              Щит и привал — здесь, а не только на странице рассылок.
+
+              Решение «сегодня не вытяну» принимают вечером, глядя на счётчик
+              дня и на остаток времени, и оба они прямо над этой карточкой.
+              На странице рассылок щит лежит в боковой колонке — на телефоне
+              это несколько экранов вниз, то есть ровно тогда, когда сил
+              листать уже нет, его там и нет.
+            */}
+            <ShieldCard
+              guard={app.guard}
+              sent={app.quota.sent}
+              quota={app.quota.quota}
+              streak={app.quota.streak}
+              onArm={() => void app.armShield()}
+              onDisarm={() => void app.disarmShield()}
+              onPause={(on) => void app.setPause(on)}
+              onAuto={(value) => void app.setShieldAuto(value)}
             />
 
             {/* Ровное число — единственная цель, которая никогда не кончается.

@@ -33,6 +33,7 @@ import {
   FullPageLoader,
   PageTitle,
   Segmented,
+  useStickyState,
 } from '@/components/ui';
 import { useSnippets } from '@/hooks/useSnippets';
 import {
@@ -85,6 +86,15 @@ export default function OutreachPage() {
   const [fullscreen, setFullscreen] = useState(false);
   const [sort, setSort] = useState<TableSort | null>(null);
   const [limit, setLimit] = useState(PAGE_SIZE);
+  /*
+   * Общий список свёрнут по умолчанию.
+   *
+   * Это архив: в него лезут по делу — найти человека, посмотреть нишу,
+   * разобрать статусы. Развёрнутым он добавлял к странице несколько
+   * экранов ровно там, где идёт ежедневная работа. Состояние всё равно
+   * запоминается, так что развёрнутый однажды таким и останется.
+   */
+  const [listOpen, setListOpen] = useStickyState('rodion.outreach.list.v2', false);
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [openContact, setOpenContact] = useState<OutreachContact | null>(null);
@@ -243,22 +253,13 @@ export default function OutreachPage() {
         delay={2}
       />
 
-      <FunnelChart
-        sent={stats.sent}
-        replied={stats.replied}
-        calls={stats.calls}
-        closed={stats.closed}
-        onLevelClick={filterByFunnel}
-      />
-
-      {/* Цена события в рассылках: воронка говорит «сколько уже»,
-          эта карточка — «сколько ещё». */}
-      <ForecastCard contacts={written} delay={4} />
-
       {/*
-        Страховка серии — под цифрами дня. Решение «сегодня не вытяну»
-        принимается после того, как посмотрел на квоту и на остаток, а не
-        первым делом при заходе на страницу.
+        Щит — сразу под оффером, а не в самом низу колонки.
+
+        Внизу до него нельзя было добраться вовсе: липкая колонка выше
+        экрана обрезала всё, что не влезло. Но и без этого он там был не на
+        месте — это единственное действие в колонке цифр, и решение «сегодня
+        не вытяну» принимают в конце дня, когда листать уже нет сил.
       */}
       <ShieldCard
         guard={app.guard}
@@ -272,8 +273,28 @@ export default function OutreachPage() {
         delay={3}
       />
 
+      <FunnelChart
+        sent={stats.sent}
+        replied={stats.replied}
+        calls={stats.calls}
+        closed={stats.closed}
+        onLevelClick={filterByFunnel}
+      />
+
+      {/* Цена события в рассылках: воронка говорит «сколько уже»,
+          эта карточка — «сколько ещё». */}
+      <ForecastCard contacts={written} delay={4} />
+
+
       {canNiches ? (
-        <NicheAnalytics contacts={written} />
+        <NicheAnalytics
+          contacts={written}
+          onPickNiche={(key) => {
+            setFilters((current) => ({ ...current, niches: [key] }));
+            setLimit(PAGE_SIZE);
+            setListOpen(true);
+          }}
+        />
       ) : (
         <LockedFeature featureKey="niches" requiredLevel={FEATURE_LEVEL.niches} />
       )}
@@ -334,8 +355,8 @@ export default function OutreachPage() {
           в Safari на iOS схлопывается в непрозрачный белый прямоугольник.
         */}
         <Collapsible
-          storageKey="rodion.outreach.list"
-          defaultOpen
+          open={listOpen}
+          onOpenChange={setListOpen}
           title={t.outreach.listTitle}
           right={
             <span className="shrink-0 text-xs tabular-nums text-white/35">

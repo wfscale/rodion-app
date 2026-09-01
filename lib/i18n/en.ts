@@ -347,6 +347,9 @@ export const en: Dict = {
     ownClose: 'Collapse',
     sentToday: 'Written today',
     sentTodayCount: '{n} today',
+    quick: { read: 'Read', replied: 'Replied', replied_no: 'No' },
+    more: '{n} more',
+    collapse: 'Collapse',
     intakeTitle: 'Add to base',
 
     offerTitle: 'Offer',
@@ -356,6 +359,10 @@ export const en: Dict = {
     copyFailed: 'Could not copy',
   },
 
+  niche: {
+    thin: 'Fewer than {n} messages — too early to trust the rates.',
+    show: 'Show this niche',
+  },
   followup: {
     title: 'Who to message today',
     empty: 'Nobody needs a nudge today.',

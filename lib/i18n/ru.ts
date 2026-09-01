@@ -350,6 +350,9 @@ export const ru = {
     ownClose: 'Свернуть',
     sentToday: 'Написал сегодня',
     sentTodayCount: '{n} за сегодня',
+    quick: { read: 'Прочитал', replied: 'Ответил', replied_no: 'Отказ' },
+    more: 'Ещё {n}',
+    collapse: 'Свернуть',
     intakeTitle: 'Пополнить базу',
 
     offerTitle: 'Оффер',
@@ -359,6 +362,10 @@ export const ru = {
     copyFailed: 'Не получилось скопировать',
   },
 
+  niche: {
+    thin: 'Меньше {n} рассылок — процентам верить рано.',
+    show: 'Показать эту нишу',
+  },
   followup: {
     title: 'Кому написать сегодня',
     empty: 'Сегодня никого дёргать не нужно.',

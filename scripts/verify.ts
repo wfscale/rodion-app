@@ -89,6 +89,9 @@ import {
   primeScore,
   spanDays,
   weakLink,
+  nicheFunnel,
+  nicheTrusted,
+  NICHE_MIN_SENT,
 } from '@/lib/insights';
 import { countByTag, hasNoteToday, resurface } from '@/lib/notes-stats';
 import {
@@ -1742,6 +1745,64 @@ check('длина ника ограничена', parseTelegram('a'.repeat(60)).
 // Разбор обязан быть идемпотентным: поле прогоняет через него каждое нажатие
 // клавиши, и второй проход не должен ничего доедать.
 check('повторный разбор ничего не меняет', parseTelegram(parseTelegram('@ivanov')), 'ivanov');
+
+/* -------------------------------------------------------------------------- */
+section('Воронка по нишам');
+
+const nc = (niche: string, status: string) =>
+  ({ niche, status, first_contact_date: '2026-08-01' }) as never;
+
+const nicheRows = nicheFunnel([
+  nc('Фитнес', 'sent'),
+  nc('фитнес', 'replied'),
+  nc('  ФИТНЕС  ', 'closed'),
+  nc('Психология', 'sent'),
+  nc('Психология', 'sent'),
+  // Собранная база в знаменатель попадать не должна: человеку не писали.
+  nc('Психология', 'not_sent'),
+  // Ниша пустая — строкой не становится.
+  nc('   ', 'closed'),
+]);
+
+check('ниши схлопываются по регистру и пробелам', nicheRows.length, 2);
+check(
+  'написание берётся первое встреченное',
+  nicheRows.find((r) => r.key === 'фитнес')?.label,
+  'Фитнес',
+);
+check('база не считается рассылкой', nicheRows.find((r) => r.key === 'психология')?.sent, 2);
+check('пустая ниша строкой не становится', nicheRows.some((r) => r.key === ''), false);
+
+const fit = nicheRows.find((r) => r.key === 'фитнес')!;
+check('написано по нише', fit.sent, 3);
+// «Закрыл» — это тоже ответ и тоже созвон: воронка вложена, а не разрезана.
+check('закрытие считается ответом', fit.replied, 2);
+check('и созвоном тоже', fit.calls, 1);
+check('закрытий', fit.closed, 1);
+check('доля ответов', fit.replyRate, 67);
+check('доля закрытий', fit.closeRate, 33);
+
+// Ниша с деньгами обязана стоять выше ниши с одними ответами: процент
+// ответов без закрытий — это красивое число, по которому теряют месяц.
+const order = nicheFunnel([
+  ...Array.from({ length: 6 }, () => nc('Отвечают', 'replied')),
+  ...Array.from({ length: 5 }, (_, i) => nc('Платят', i === 0 ? 'closed' : 'sent')),
+]).map((r) => r.key);
+check('деньги выше отклика', order[0], 'платят');
+
+// А вот «100% закрытий» на одной рассылке наверх не пускаем: это самое
+// заметное число в списке и самое бессмысленное.
+const thin = nicheFunnel([
+  nc('Случайность', 'closed'),
+  ...Array.from({ length: 8 }, (_, i) => nc('Рабочая', i < 3 ? 'replied' : 'sent')),
+]).map((r) => r.key);
+check('ниша без данных уходит вниз', thin[0], 'рабочая');
+check('но из списка не пропадает', thin.includes('случайность'), true);
+
+check('порог доверия', NICHE_MIN_SENT, 5);
+check('четыре рассылки — рано', nicheTrusted({ sent: 4 } as never), false);
+check('пять — уже можно', nicheTrusted({ sent: 5 } as never), true);
+check('на пустом входе строк нет', nicheFunnel([]).length, 0);
 
 /* -------------------------------------------------------------------------- */
 section('Какой оффер записан человеку');

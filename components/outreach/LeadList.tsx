@@ -1,8 +1,8 @@
 'use client';
 
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ChevronUp, Copy, ExternalLink, PenLine, Send, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Check, ChevronDown, ChevronUp, Copy, ExternalLink, PenLine, Send, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CardTitle, GlassCard } from '@/components/GlassCard';
 import { useLanguage } from '@/components/LanguageProvider';
 import { copyText } from '@/lib/clipboard';
@@ -24,6 +24,17 @@ type LeadListProps = {
 };
 
 /**
+ * По сколько строк базы показывать за раз.
+ *
+ * Собранная база — это сотни строк, и они выталкивали всё остальное вниз
+ * на несколько экранов: чтобы поставить статус написанному, приходилось
+ * пролистать всю базу целиком. Работают всегда с верхом списка — обработал,
+ * строка исчезла, следующая поднялась, — поэтому показывать больше десятка
+ * незачем.
+ */
+const PAGE = 10;
+
+/**
  * База: люди, найденные, но ещё не написанные.
  *
  * Строка собрана по порядку реальных действий: открыть профиль, записать
@@ -42,6 +53,10 @@ export function LeadList({
   delay = 0,
 }: LeadListProps) {
   const { t, tf } = useLanguage();
+
+  const [limit, setLimit] = useState(PAGE);
+  const shown = useMemo(() => leads.slice(0, limit), [leads, limit]);
+  const rest = leads.length - shown.length;
 
   return (
     <GlassCard delay={delay}>
@@ -65,7 +80,7 @@ export function LeadList({
       ) : (
         <ul className="space-y-2">
           <AnimatePresence initial={false}>
-            {leads.map((lead) => (
+            {shown.map((lead) => (
               <motion.li
                 key={lead.id}
                 layout
@@ -87,6 +102,33 @@ export function LeadList({
               </motion.li>
             ))}
           </AnimatePresence>
+
+          {/* Показать ещё — внутри списка, а не под карточкой: так видно,
+              что за кнопкой продолжение той же базы. */}
+          {rest > 0 && (
+            <li>
+              <button
+                type="button"
+                onClick={() => setLimit((n) => n + PAGE)}
+                className="btn-ghost w-full text-sm font-bold"
+              >
+                <ChevronDown size={16} />
+                {tf(t.leads.more, { n: Math.min(PAGE, rest) })}
+              </button>
+            </li>
+          )}
+
+          {limit > PAGE && (
+            <li>
+              <button
+                type="button"
+                onClick={() => setLimit(PAGE)}
+                className="min-h-[44px] w-full text-sm font-semibold text-white/35 transition-colors hover:text-white"
+              >
+                {t.leads.collapse}
+              </button>
+            </li>
+          )}
         </ul>
       )}
     </GlassCard>

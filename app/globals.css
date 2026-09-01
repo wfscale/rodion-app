@@ -186,6 +186,31 @@
   }
 
   /*
+   * Тонкая полоса для колонок со своей прокруткой.
+   *
+   * Прятать её целиком здесь нельзя: если колонка крутится, а признака
+   * этого нет, до нижней карточки просто не догадаешься доскроллить —
+   * ровно так и потерялся щит.
+   */
+  .thin-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+  }
+  .thin-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .thin-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .thin-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.16);
+    border-radius: 999px;
+  }
+  .thin-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+  }
+
+  /*
    * Отступ снизу под фиксированную навигацию + вырез iPhone.
    * Имя намеренно не «pb-nav»: из theme.spacing.nav Tailwind генерирует
    * собственную утилиту pb-nav (ровно 64px), и она перекрыла бы эту.

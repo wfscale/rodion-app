@@ -442,3 +442,107 @@ export function funnelTotals(contacts: OutreachContact[]) {
     closed: contacts.filter((c) => c.status === 'closed').length,
   };
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Разбор по нишам                                                            */
+/* -------------------------------------------------------------------------- */
+
+/** Воронка одной ниши целиком, а не только «ответили». */
+export type NicheRow = {
+  /** Написание, которое встретилось первым: ниша — свободный текст. */
+  label: string;
+  /** Ключ группировки — та же ниша в нижнем регистре. */
+  key: string;
+  sent: number;
+  replied: number;
+  calls: number;
+  closed: number;
+  /** Доли от написанных, в процентах. */
+  replyRate: number;
+  callRate: number;
+  closeRate: number;
+};
+
+function pct(part: number, whole: number): number {
+  return whole > 0 ? Math.round((part / whole) * 100) : 0;
+}
+
+/**
+ * Сколько рассылок в нише, чтобы её процентам можно было верить.
+ *
+ * Порог грубый и намеренно низкий: это не статистика, а защита от «100%
+ * закрытий» на единственном человеке — числа, по которому разворачивают
+ * работу и теряют месяц.
+ */
+export const NICHE_MIN_SENT = 5;
+
+/** Хватает ли данных, чтобы показывать проценты ниши как вывод. */
+export function nicheTrusted(row: NicheRow): boolean {
+  return row.sent >= NICHE_MIN_SENT;
+}
+
+/**
+ * Воронка по каждой нише.
+ *
+ * Одной колонки «ответили» мало: ниша, где отвечают охотно, но не доходят до
+ * созвона, и ниша, где отвечают редко, но каждый второй закрывается, — это
+ * противоположные решения, а по проценту ответов они выглядят одинаково.
+ *
+ * Собранная база в расчёт не идёт: человек, которому не писали, не может ни
+ * ответить, ни промолчать, и в знаменателе ему делать нечего.
+ *
+ * Порядок: сначала ниши, по которым есть на что смотреть (NICHE_MIN_SENT),
+ * и только потом всё остальное. Без этого наверх встаёт «100% закрытий» с
+ * одной рассылкой в основании — самое заметное число в списке и самое
+ * бессмысленное. Внутри группы: закрытия, созвоны, ответы — от денег к их
+ * признакам, при равенстве выше тот, где больше написано.
+ */
+export function nicheFunnel(contacts: OutreachContact[]): NicheRow[] {
+  const map = new Map<string, NicheRow>();
+
+  for (const contact of contacts) {
+    if (!wasSent(contact)) continue;
+
+    const label = (contact.niche ?? '').trim();
+    if (!label) continue;
+
+    const key = label.toLowerCase();
+    const row =
+      map.get(key) ??
+      ({
+        label,
+        key,
+        sent: 0,
+        replied: 0,
+        calls: 0,
+        closed: 0,
+        replyRate: 0,
+        callRate: 0,
+        closeRate: 0,
+      } as NicheRow);
+
+    const status = normalizeStatus(contact.status);
+    row.sent += 1;
+    if (REPLIED_STATUSES.includes(status)) row.replied += 1;
+    if (CALL_STATUSES.includes(status)) row.calls += 1;
+    if (status === 'closed') row.closed += 1;
+
+    map.set(key, row);
+  }
+
+  return Array.from(map.values())
+    .map((row) => ({
+      ...row,
+      replyRate: pct(row.replied, row.sent),
+      callRate: pct(row.calls, row.sent),
+      closeRate: pct(row.closed, row.sent),
+    }))
+    .sort(
+      (a, b) =>
+        Number(nicheTrusted(b)) - Number(nicheTrusted(a)) ||
+        b.closeRate - a.closeRate ||
+        b.callRate - a.callRate ||
+        b.replyRate - a.replyRate ||
+        b.sent - a.sent,
+    );
+}
