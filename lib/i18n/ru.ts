@@ -127,20 +127,6 @@ export const ru = {
     tomorrowTitle: 'НА ЗАВТРА',
     tomorrowHint: 'Утром встанут в задачи дня сами.',
 
-    habitsTitle: 'База — это гигиена, не результат.',
-
-    checkinTitle: 'Утренний чекин',
-    checkinDone: 'Чекин заполнен',
-    sleepTime: 'Во сколько лёг',
-    wakeTime: 'Во сколько встал',
-    wakeQuality: 'Как встал',
-    wakeEasy: 'Легко',
-    wakeNormal: 'Нормально',
-    wakeHard: 'Тяжело',
-    checkinComment: 'Комментарий',
-    checkinCommentPh: 'Как самочувствие, что в голове…',
-    saveCheckin: 'Сохранить чекин',
-
     soberMode: 'Трезвый режим',
   },
 
@@ -205,15 +191,6 @@ export const ru = {
     notReady: 'Щит включится после миграции v7 в Supabase.',
   },
 
-  habits: {
-    water: 'Вода 500 мл + щепотка соли',
-    pushups: '50 отжиманий',
-    coldShower: 'Холодный душ (60 сек)',
-    walk: 'Прогулка на улице',
-    d3: 'Принял D3',
-    noReels: 'Не листал рилсы бездумно',
-    english: 'Попрактиковал английский',
-  },
 
   outreach: {
     title: 'Рассылки',
@@ -362,6 +339,14 @@ export const ru = {
     copyFailed: 'Не получилось скопировать',
   },
 
+  pulse: {
+    title: 'Как идёт',
+    days: '{n} дней',
+    active: 'рабочих дней: {n} из {of}',
+    peak: 'лучший {n}',
+    week: 'Последние 7 дней',
+    lastWeek: 'до этого {n}',
+  },
   niche: {
     thin: 'Меньше {n} рассылок — процентам верить рано.',
     show: 'Показать эту нишу',

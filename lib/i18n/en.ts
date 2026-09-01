@@ -128,20 +128,6 @@ export const en: Dict = {
     tomorrowTitle: 'FOR TOMORROW',
     tomorrowHint: 'They become today\u2019s tasks on their own in the morning.',
 
-    habitsTitle: 'The basics are hygiene, not results.',
-
-    checkinTitle: 'Morning check-in',
-    checkinDone: 'Check-in done',
-    sleepTime: 'Went to bed',
-    wakeTime: 'Woke up',
-    wakeQuality: 'How was waking up',
-    wakeEasy: 'Easy',
-    wakeNormal: 'Normal',
-    wakeHard: 'Hard',
-    checkinComment: 'Comment',
-    checkinCommentPh: 'How you feel, what is on your mind…',
-    saveCheckin: 'Save check-in',
-
     soberMode: 'Sober mode',
   },
 
@@ -205,15 +191,6 @@ export const en: Dict = {
     notReady: 'The shield turns on after migration v7 in Supabase.',
   },
 
-  habits: {
-    water: 'Water 500 ml + pinch of salt',
-    pushups: '50 push-ups',
-    coldShower: 'Cold shower (60 sec)',
-    walk: 'Walk outside',
-    d3: 'Took D3',
-    noReels: 'No mindless reels',
-    english: 'Practised English',
-  },
 
   outreach: {
     title: 'Outreach',
@@ -359,6 +336,14 @@ export const en: Dict = {
     copyFailed: 'Could not copy',
   },
 
+  pulse: {
+    title: 'How it goes',
+    days: '{n} days',
+    active: 'active days: {n} of {of}',
+    peak: 'best {n}',
+    week: 'Last 7 days',
+    lastWeek: 'before that {n}',
+  },
   niche: {
     thin: 'Fewer than {n} messages — too early to trust the rates.',
     show: 'Show this niche',

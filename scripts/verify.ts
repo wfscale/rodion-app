@@ -92,6 +92,7 @@ import {
   nicheFunnel,
   nicheTrusted,
   NICHE_MIN_SENT,
+  compareWindows,
 } from '@/lib/insights';
 import { countByTag, hasNoteToday, resurface } from '@/lib/notes-stats';
 import {
@@ -1745,6 +1746,35 @@ check('длина ника ограничена', parseTelegram('a'.repeat(60)).
 // Разбор обязан быть идемпотентным: поле прогоняет через него каждое нажатие
 // клавиши, и второй проход не должен ничего доедать.
 check('повторный разбор ничего не меняет', parseTelegram(parseTelegram('@ivanov')), 'ivanov');
+
+/* -------------------------------------------------------------------------- */
+section('Сравнение скользящих окон');
+
+const dp = (values: number[]) =>
+  values.map((sent, i) => ({ date: `2026-08-${String(i + 1).padStart(2, '0')}`, sent }));
+
+// 14 дней: первая семёрка 20, вторая 40 — рост вдвое.
+const grew = compareWindows(dp([1, 2, 3, 4, 5, 2, 3, 6, 6, 6, 6, 6, 5, 5]), 7);
+check('последние семь', grew.recent, 40);
+check('предыдущие семь', grew.previous, 20);
+check('рост вдвое — это +100%', grew.delta, 100);
+
+/*
+ * Главное, ради чего окна скользящие: неполный отрезок не должен читаться
+ * как спад. Ряд ровный по 10 в день — сравнение обязано дать ноль в любой
+ * день недели, а не «минус, потому что четверг не наступил».
+ */
+const flat = compareWindows(dp(Array.from({ length: 14 }, () => 10)), 7);
+check('ровная работа — ноль изменений', flat.delta, 0);
+check('и обе половины равны', flat.recent === flat.previous, true);
+
+check('спад считается спадом', compareWindows(dp([10, 10, 5, 5]), 2).delta, -50);
+check('без прошлого сравнивать нечего', compareWindows(dp([0, 0, 3, 4]), 2).delta, 100);
+check('пустой ряд не роняет', compareWindows([], 7).delta, null);
+// Окно шире ряда обрезается до половины: иначе «предыдущие семь» брались бы
+// из воздуха и любой первый день выглядел бы взрывным ростом.
+check('окно шире ряда обрезается', compareWindows(dp([4, 6]), 7).recent, 6);
+check('и вторая половина честная', compareWindows(dp([4, 6]), 7).previous, 4);
 
 /* -------------------------------------------------------------------------- */
 section('Воронка по нишам');

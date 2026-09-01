@@ -546,3 +546,39 @@ export function nicheFunnel(contacts: OutreachContact[]): NicheRow[] {
         b.sent - a.sent,
     );
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Скользящее сравнение окон                                                  */
+/* -------------------------------------------------------------------------- */
+
+export type WindowCompare = {
+  /** Сумма за последнюю половину окна. */
+  recent: number;
+  /** Сумма за предыдущую половину. */
+  previous: number;
+  /** Изменение в процентах. null — сравнивать не с чем. */
+  delta: number | null;
+};
+
+/**
+ * Две половины одного окна друг против друга.
+ *
+ * Календарная неделя для этого не годится: текущая всегда неполная и в среду
+ * обязана проигрывать прошлой. «-46%» получалось из одного того, что четверг
+ * ещё не наступил, — число не сообщает ничего и при этом бьёт по рукам ровно
+ * тогда, когда человек работает нормально.
+ *
+ * Скользящие окна сравнимы в любой день. Считаются из того же ряда, который
+ * нарисован на графике, поэтому цифра под ним всегда про то, что на нём видно.
+ */
+export function compareWindows(series: DayPoint[], half: number): WindowCompare {
+  const size = Math.max(0, Math.min(half, Math.floor(series.length / 2)));
+  const tail = series.slice(series.length - size);
+  const head = series.slice(series.length - size * 2, series.length - size);
+
+  const add = (rows: DayPoint[]) => rows.reduce((acc, row) => acc + row.sent, 0);
+  const recent = add(tail);
+  const previous = add(head);
+
+  return { recent, previous, delta: deltaPct(recent, previous) };
+}

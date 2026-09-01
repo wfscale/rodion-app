@@ -8,10 +8,9 @@ import { BurnTimer } from '@/components/guard/BurnTimer';
 import { ShieldCard } from '@/components/guard/ShieldCard';
 import { ActivityFeed } from '@/components/home/ActivityFeed';
 import { DailyTasks } from '@/components/home/DailyTasks';
-import { HabitsBlock } from '@/components/home/HabitsBlock';
 import { HomeHeader } from '@/components/home/HomeHeader';
-import { MorningCheckin } from '@/components/home/MorningCheckin';
 import { OutreachCounter } from '@/components/home/OutreachCounter';
+import { PulseCard } from '@/components/home/PulseCard';
 import { QuickAddOutreach } from '@/components/home/QuickAddOutreach';
 import { RoundNudge } from '@/components/home/RoundNudge';
 import { useLanguage } from '@/components/LanguageProvider';
@@ -21,7 +20,6 @@ import { Button, DeskColumns, FullPageLoader, useStickyState } from '@/component
 import { useFocusSession } from '@/components/session/SessionProvider';
 import { formatShortDate } from '@/lib/date';
 import { daysUntilDeadline } from '@/lib/mode';
-import { onceKey, XP } from '@/lib/xp';
 
 export default function HomePage() {
   const { t, lang } = useLanguage();
@@ -50,9 +48,6 @@ export default function HomePage() {
 
   const profile = app.profile;
   const daysLeft = daysUntilDeadline(profile.deadline_date, app.today);
-  const checkinDone = Boolean(
-    app.todayLog?.wake_time || app.todayLog?.sleep_time || app.todayLog?.wake_quality,
-  );
   const canFocus = app.can('focus');
   const focusOn = canFocus && focus;
 
@@ -93,6 +88,7 @@ export default function HomePage() {
         левая растягивается на всю ширину сама: пустой колонки в сетке нет.
       */}
       <DeskColumns
+        panes
         main={
           <>
             {/* Счётчик рассылок — главный элемент экрана, всё остальное фон. */}
@@ -154,6 +150,29 @@ export default function HomePage() {
 
             <QuickAddOutreach today={app.today} onAdd={handleQuickAdd} busy={adding} />
 
+            {/* Задачи дня и дневные задачи проектов приходят одним списком:
+                работа по проекту и есть работа дня. */}
+            <DailyTasks
+              tasks={app.homeTasks}
+              tomorrow={app.tomorrowTasks}
+              onAdd={(text, forTomorrow, minutes) =>
+                void app.addTask(text, forTomorrow, minutes)
+              }
+              onToggle={(task) => void app.toggleHomeTask(task)}
+              onDelete={(task) => void app.deleteTask(task.id)}
+              onDeleteTomorrow={(id) => void app.deleteTask(id)}
+              timerBusy={Boolean(session.session)}
+              onStartTimer={(task) =>
+                session.start({
+                  kind: 'task',
+                  label: task.text,
+                  minutes: task.minutes ?? 0,
+                  taskId: task.id,
+                  taskSource: task.source,
+                })
+              }
+            />
+
             {focusOn && (
               <Button variant="ghost" full onClick={() => setFocus(false)}>
                 <Minimize2 size={16} />
@@ -165,47 +184,19 @@ export default function HomePage() {
         side={
           focusOn ? null : (
             <>
+              {/*
+                Как идёт — картина происходящего.
+
+                Стоит первой в правой колонке: счётчик слева отвечает про
+                сегодня, лента ниже — про последний час, а на вопрос «растёшь
+                или стоишь» до этого отвечала только страница прогресса, куда
+                за этим никто не ходит.
+              */}
+              <PulseCard contacts={app.contacts} today={app.today} />
+
               {/* Компонент рисует свою карточку сам: вложенный backdrop-filter
                   в Safari на iOS схлопывается в белый прямоугольник. */}
               <ActivityFeed entries={app.activity} />
-
-              {/* Задачи дня и дневные задачи проектов приходят одним списком:
-                  работа по проекту и есть работа дня. */}
-              <DailyTasks
-                tasks={app.homeTasks}
-                tomorrow={app.tomorrowTasks}
-                onAdd={(text, forTomorrow, minutes) =>
-                  void app.addTask(text, forTomorrow, minutes)
-                }
-                onToggle={(task) => void app.toggleHomeTask(task)}
-                onDelete={(task) => void app.deleteTask(task.id)}
-                onDeleteTomorrow={(id) => void app.deleteTask(id)}
-                timerBusy={Boolean(session.session)}
-                onStartTimer={(task) =>
-                  session.start({
-                    kind: 'task',
-                    label: task.text,
-                    minutes: task.minutes ?? 0,
-                    taskId: task.id,
-                    taskSource: task.source,
-                  })
-                }
-              />
-
-              <MorningCheckin
-                log={app.todayLog ?? ({ date: app.today } as never)}
-                done={checkinDone}
-                delay={3}
-                onSave={async (input) => {
-                  await app.saveDay(input);
-                  await app.awardXp(XP.CHECKIN, 'checkin', onceKey.checkin(app.today));
-                }}
-              />
-
-              <HabitsBlock
-                done={app.todayLog?.checklist ?? {}}
-                onToggle={(id) => void app.toggleHabit(id)}
-              />
 
               {/* Трезвый режим — экстренная кнопка, должна быть под рукой. */}
               <Button variant="ghost" full onClick={() => setSober(true)}>

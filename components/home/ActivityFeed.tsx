@@ -13,10 +13,11 @@ const MAX_ROWS = 40;
 /**
  * Сколько строк видно, пока ленту не развернули.
  *
- * В хороший день событий больше двадцати, и свёрнутая лента отодвигает вниз
- * всё остальное. Шести хватает, чтобы видеть, что день двигается.
+ * Лента — фон, а не работа: она отвечает на «день двигается?», и трёх строк
+ * на это хватает. Шесть занимали полкарточки в блоке, который на главной
+ * второстепенен и в иерархию за внимание лезть не должен.
  */
-const PREVIEW_ROWS = 6;
+const PREVIEW_ROWS = 3;
 
 type ActivityFeedProps = {
   /** События за сегодня. Порядок не важен — сортируем сами. */
@@ -52,7 +53,7 @@ export function ActivityFeed({ entries }: ActivityFeedProps) {
   const hidden = all.length - rows.length;
 
   return (
-    <GlassCard className="p-4">
+    <GlassCard className="p-3.5">
       <CardTitle
         right={
           all.length > 0 ? (
@@ -88,7 +89,7 @@ export function ActivityFeed({ entries }: ActivityFeedProps) {
                   transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
                   className="overflow-hidden"
                 >
-                  <div className="flex items-baseline gap-2.5 py-1.5">
+                  <div className="flex items-baseline gap-2.5 py-1">
                     <span
                       className={`shrink-0 text-xs tabular-nums ${
                         loud ? 'text-white/55' : 'text-white/30'
