@@ -9,8 +9,14 @@ import { statusTone, telegramUrl } from '@/components/outreach/ContactSheet';
 import { Badge } from '@/components/ui';
 import { normalizeStatus, type ContactStatus, type OutreachContact } from '@/lib/types';
 
-/** По сколько строк показывать: дальше это уже не «сегодня», а список. */
-const PAGE = 8;
+/**
+ * Сколько строк открыто по умолчанию — и по сколько добавляется.
+ *
+ * Свежих три: статус ставят тем, кому написали только что. Всё остальное
+ * за день — уже история дня, и разворачивают её отдельно.
+ */
+const PAGE = 3;
+const STEP = 10;
 
 /**
  * Статусы, которые ставятся одним тапом прямо из строки.
@@ -173,11 +179,11 @@ export function SentToday({ contacts, onOpen, onStatus, delay = 0 }: SentTodayPr
           <li>
             <button
               type="button"
-              onClick={() => setLimit((n) => n + PAGE)}
+              onClick={() => setLimit((n) => n + STEP)}
               className="btn-ghost w-full text-sm font-bold"
             >
               <ChevronDown size={16} />
-              {tf(t.leads.more, { n: Math.min(PAGE, rest) })}
+              {tf(t.leads.more, { n: Math.min(STEP, rest) })}
             </button>
           </li>
         )}

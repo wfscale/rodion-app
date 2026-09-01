@@ -400,8 +400,21 @@ export function Collapsible({
 export function DeskColumns({
   main,
   side,
-  /** Держать правую колонку в поле зрения при прокрутке длинной левой. */
-  stickySide = false,
+  /**
+   * Две независимые панели на мониторе вместо одной длинной страницы.
+   *
+   * Раньше это была просто липкая правая колонка, и в ней жил баг, который
+   * стоил щита: sticky без ограничения высоты прижимает колонку к верху и
+   * делает всё, что не влезло в экран, недостижимым — страница листается, а
+   * колонка стоит. Ограничить высоту одной колонки мало: пока блок не
+   * «прилип», его низ всё равно висит за нижним краем экрана, и докрутить
+   * туда нечем.
+   *
+   * Поэтому высоту в экран получает вся сетка, а прокрутку — каждая колонка
+   * своя. Тогда обе всегда целиком в кадре и обе доезжают до конца, в каком
+   * бы месте страницы ты ни находился.
+   */
+  panes = false,
   /**
    * Показать правую колонку первой на телефоне, оставив её справа на мониторе.
    *
@@ -414,7 +427,7 @@ export function DeskColumns({
 }: {
   main: ReactNode;
   side: ReactNode;
-  stickySide?: boolean;
+  panes?: boolean;
   sideFirst?: boolean;
   className?: string;
 }) {
@@ -422,41 +435,49 @@ export function DeskColumns({
   // половину экрана пустоты — сетка в этом случае просто не нужна.
   if (!side) return <div className={`space-y-4 ${className}`}>{main}</div>;
 
+  /*
+   * Панель: своя прокрутка, свой конец, чужая её не трогает.
+   *
+   * overscroll-contain — чтобы, докрутив панель до низа, не «провалиться» в
+   * прокрутку страницы: колонки обязаны быть независимыми до конца.
+   * Нижний отступ внутри — иначе последняя карточка упирается в край.
+   */
+  const pane = panes
+    ? 'lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pb-6 lg:pr-1 thin-scrollbar'
+    : '';
+
   // Порядок в DOM задаёт порядок на телефоне, а на мониторе колонки
   // расставляются явно — поэтому одна и та же разметка читается по-разному
   // на двух устройствах, и дублировать блоки не нужно.
   const mainCol = (
-    <div className={`min-w-0 space-y-4 ${sideFirst ? 'lg:col-start-1 lg:row-start-1' : ''}`}>
+    <div
+      className={`min-w-0 space-y-4 ${sideFirst ? 'lg:col-start-1 lg:row-start-1' : ''} ${pane}`}
+    >
       {main}
     </div>
   );
 
-  /*
-   * Липкая колонка обязана иметь свою прокрутку.
-   *
-   * Без max-height sticky прижимает колонку к верху и всё, что не влезло в
-   * экран, становится недостижимым: страница листается, а колонка стоит.
-   * Щит и привал лежали как раз в этой мёртвой зоне — до них нельзя было
-   * добраться вообще никак.
-   *
-   * overscroll-contain: докрутив колонку до конца, прокрутка не
-   * перескакивает на страницу. Колонки крутятся по отдельности.
-   */
   const sideCol = (
     <div
-      className={`min-w-0 space-y-4 ${sideFirst ? 'lg:col-start-2 lg:row-start-1' : ''} ${
-        stickySide
-          ? 'lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1 thin-scrollbar'
-          : ''
-      }`}
+      className={`min-w-0 space-y-4 ${sideFirst ? 'lg:col-start-2 lg:row-start-1' : ''} ${pane}`}
     >
       {side}
     </div>
   );
 
+  /*
+   * Сетка липнет к верху и занимает ровно экран.
+   *
+   * top-4 и h-[calc(100vh-2rem)] — одно и то же число: прилипнув, сетка
+   * стоит в 16px от верха, и оставшаяся высота ровно такая. Пока страница
+   * не прокручена, сетка свисает вниз на высоту шапки — это те несколько
+   * десятков пикселей, которые страница и прокручивает.
+   */
+  const shell = panes ? 'lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] lg:items-stretch' : '';
+
   return (
     <div
-      className={`grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] ${className}`}
+      className={`grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] ${shell} ${className}`}
     >
       {sideFirst ? sideCol : mainCol}
       {sideFirst ? mainCol : sideCol}

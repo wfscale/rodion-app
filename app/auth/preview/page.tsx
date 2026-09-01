@@ -14,7 +14,6 @@ import { notFound } from 'next/navigation';
 import { useState } from 'react';
 import { ActivityFeed } from '@/components/home/ActivityFeed';
 import { DailyTasks } from '@/components/home/DailyTasks';
-import { HabitsBlock } from '@/components/home/HabitsBlock';
 import { BurnTimer } from '@/components/guard/BurnTimer';
 import { ShieldCard } from '@/components/guard/ShieldCard';
 import { HomeHeader } from '@/components/home/HomeHeader';
@@ -248,7 +247,6 @@ const CHART = Array.from({ length: 14 }, (_, i) => ({
 export default function PreviewPage() {
   if (process.env.NODE_ENV === 'production') notFound();
 
-  const [done, setDone] = useState<Record<string, boolean>>({ water: true, pushups: true });
   const [sort, setSort] = useState<TableSort | null>(null);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
 
@@ -333,7 +331,6 @@ export default function PreviewPage() {
           timerBusy={false}
         />
 
-        <HabitsBlock done={done} onToggle={(id) => setDone((p) => ({ ...p, [id]: !p[id] }))} />
 
         <FunnelChart sent={247} replied={11} calls={3} closed={1} onLevelClick={() => undefined} />
 

@@ -193,7 +193,6 @@ type AppContextValue = {
   toggleReminder: (id: string) => Promise<void>;
   deleteReminder: (id: string) => Promise<void>;
 
-  toggleHabit: (habitId: string) => Promise<void>;
   saveDay: (patch: Partial<DailyLog>) => Promise<void>;
 
   /** Отметить сорванное. Пустой список означает «всё держится». */
@@ -1570,24 +1569,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [supabase, user, logs, today],
   );
 
-  const toggleHabit = useCallback(
-    async (habitId: string) => {
-      const current = todayLog?.checklist ?? {};
-      const turningOn = !current[habitId];
-      await saveDay({ checklist: { ...current, [habitId]: turningOn } });
-
-      // Привычка стоит символический 1 XP — она гигиена, а не результат.
-      if (turningOn) {
-        const key = `habit:${today}:${habitId}`;
-        if (!attemptedKeys.current.has(key)) {
-          attemptedKeys.current.add(key);
-          await awardXp(1, 'habit', key);
-        }
-      }
-    },
-    [todayLog?.checklist, saveDay, awardXp, today],
-  );
-
   /* ------------------------------------------------------------------ */
   /*  Вечерний чекин режима                                              */
   /* ------------------------------------------------------------------ */
@@ -1731,7 +1712,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateReminder,
       toggleReminder,
       deleteReminder,
-      toggleHabit,
       saveDay,
       submitModeCheckin,
       breakMode,
@@ -1753,7 +1733,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addContact, addLeads, markSent, updateContact, setStatus, deleteContact, touchContact, muteContact,
       addTask, toggleTask, deleteTask, toggleHomeTask, completeTask, reloadProjectTasks,
       addReminder, updateReminder, toggleReminder, deleteReminder,
-      toggleHabit, saveDay, submitModeCheckin, breakMode, modeCounters,
+      saveDay, submitModeCheckin, breakMode, modeCounters,
       armShield, disarmShield, setPause, setShieldAuto,
       updateProfile, awardXp, load, signOut,
     ],
