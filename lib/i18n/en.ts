@@ -128,7 +128,6 @@ export const en: Dict = {
     tomorrowTitle: 'FOR TOMORROW',
     tomorrowHint: 'They become today\u2019s tasks on their own in the morning.',
 
-    soberMode: 'Sober mode',
   },
 
   nudge: {
@@ -339,10 +338,11 @@ export const en: Dict = {
   pulse: {
     title: 'How it goes',
     days: '{n} days',
-    active: 'active days: {n} of {of}',
+    active: 'active days: {n}',
     peak: 'best {n}',
     week: 'Last 7 days',
-    lastWeek: 'before that {n}',
+    record: 'record',
+    best: 'record {n}',
   },
   niche: {
     thin: 'Fewer than {n} messages — too early to trust the rates.',
@@ -773,50 +773,6 @@ export const en: Dict = {
     stop: 'Done for today',
   },
 
-  sober: {
-    open: 'Sober mode',
-    next: 'Next',
-    s1Title: 'Stop.',
-    s1: `Right now you want to jerk off, eat something sweet or sink into reels.
-
-That is not your desire. That is your brain in panic — it did not get dopamine and it is screaming for you to hand it over right now.
-
-If you give in, it goes quiet for 20 minutes. Then it screams louder. And demands more.
-
-And here is what matters most: after that you will not be able to do outreach. You will be back in that state where even starting is hard. Where you stare at the screen and cannot write the first word. Literally cannot — you simply will not have the chemistry for it.`,
-
-    s2Title: 'Understand how this works.',
-    s2: `Noradrenaline is the fuel for your actions. It is what gives you the strength to sit down and do what you do not feel like doing.
-
-It is synthesized from dopamine.
-
-When you spend dopamine on porn, sugar and reels, there is nothing left for noradrenaline. Literally nothing. And that is why an hour later you sit there unable to make yourself write even one message.
-
-Outreach demands noradrenaline. Outreach is exactly the kind of action under pressure that produces it.
-
-There is one way out: do not waste dopamine. Save it for outreach. Every message is a dose. Every reply is a high you earned.`,
-
-    s3Title: 'You have {n} days.',
-    s3: `If you are not earning by that date — the army. A year lost. Precisely the year when you can build everything and reach everything, while the body is young, while the head is clear, while the doors are open.
-
-18–19 is the perfect age. Not later. Now.
-
-Outreach → closing an expert → money → freedom → moving → travel → the life you want.
-
-Just one message right now.
-Not ten. One.
-And everything shifts.`,
-
-    s3Extra: `One more thing.
-
-While you hold — your face gets leaner. The puffiness goes. The skin tightens over your cheekbones. Your voice drops. You start to look different — not because you lost weight, but because your hormones are changing. Testosterone rises. Women read it — not with their minds, with instinct. You become a different rank of person. Literally.
-
-Sugar and porn are the price of staying unnoticed.
-Abstinence is the price of becoming a magnet.`,
-
-    cta: 'OPEN OUTREACH',
-    deadlinePassed: 'The date has passed. Set a new one in settings.',
-  },
 
   mode: {
     title: 'Mode',
@@ -1011,7 +967,7 @@ Abstinence is the price of becoming a magnet.`,
 
     goals: 'Stakes',
     deadline: 'Deadline',
-    deadlineHint: 'The sober-mode counter is measured from this date.',
+    deadlineHint: 'Deadline for the day counter.',
     quotaInfo: 'Daily quota',
     quotaInfoHint: 'It grows on its own: +3 every 3 closed days. Not set by hand.',
 

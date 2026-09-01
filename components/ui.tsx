@@ -2,8 +2,14 @@
 
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronDown, Plus } from 'lucide-react';
-import { useEffect, useId, useState } from 'react';
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import type {
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  RefObject,
+  TextareaHTMLAttributes,
+} from 'react';
 
 /* -------------------------------------------------------------------------- */
 /*  Кнопки                                                                     */
@@ -397,22 +403,170 @@ export function Collapsible({
  * items-start обязателен: без него колонки растягиваются до высоты соседней,
  * и короткая карточка справа тянется вниз пустым стеклом.
  */
+/**
+ * Минимальная высота панели. Ниже неё две колонки со своей прокруткой
+ * превращаются в две щели — лучше обычная страница.
+ */
+const PANE_MIN_HEIGHT = 420;
+
+/**
+ * Воздух под панелями. Маленький намеренно: внутри у панели уже есть свой
+ * нижний отступ, а каждый лишний пиксель здесь — это пиксель, который на
+ * ноутбуке не достался содержимому.
+ */
+const PANE_BOTTOM_GAP = 12;
+
+/**
+ * Ближайший предок с собственной прокруткой. null — прокручивается страница.
+ */
+function scrollParent(node: HTMLElement): HTMLElement | null {
+  let el = node.parentElement;
+  while (el && el !== document.body && el !== document.documentElement) {
+    const overflow = getComputedStyle(el).overflowY;
+    if (overflow === 'auto' || overflow === 'scroll') return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Сколько места под сеткой занято чем-то ещё.
+ *
+ * У макета есть нижний отступ (на телефоне ещё и полоса навигации), и без
+ * его вычета сетка ровно на эту величину не помещается: странице остаётся
+ * крошечная прокрутка, и шапка при первом же движении колеса уезжает вверх.
+ *
+ * Считается обходом предков, а не через scrollHeight документа. Это принцип,
+ * а не вкус: scrollHeight зависит от высоты самой сетки, и измерение,
+ * построенное на нём, кормит само себя — каждый пересчёт ужимал панели ещё
+ * на один отступ, пока они не схлопывались совсем.
+ */
+function spaceBelow(node: HTMLElement): number {
+  let extra = 0;
+  let el: HTMLElement | null = node;
+
+  const stop = scrollParent(node);
+
+  while (el && el !== document.body && el !== stop && el.parentElement) {
+    // Всё, что лежит после элемента у того же родителя.
+    let sibling = el.nextElementSibling as HTMLElement | null;
+    while (sibling) {
+      const style = getComputedStyle(sibling);
+      // Шторки и оверлеи в потоке не участвуют и места не занимают.
+      if (style.position !== 'fixed' && style.position !== 'absolute') {
+        extra +=
+          sibling.offsetHeight +
+          (parseFloat(style.marginTop) || 0) +
+          (parseFloat(style.marginBottom) || 0);
+      }
+      sibling = sibling.nextElementSibling as HTMLElement | null;
+    }
+
+    const parent: HTMLElement = el.parentElement;
+    const parentStyle = getComputedStyle(parent);
+    extra +=
+      (parseFloat(parentStyle.paddingBottom) || 0) +
+      (parseFloat(parentStyle.borderBottomWidth) || 0) +
+      (parseFloat(parentStyle.marginBottom) || 0);
+
+    el = parent;
+  }
+
+  return extra;
+}
+
+/**
+ * Высота, при которой панели занимают ровно остаток экрана.
+ *
+ * Считать её в CSS нечем. `100vh - 2rem` предполагает, что сетка стоит у
+ * самого верха, а она стоит под шапкой страницы — на главной это счётчик
+ * цикла, на рассылках заголовок, квота и кнопки. Разницу (полторы-две сотни
+ * пикселей) сетка свешивала за нижний край экрана вместе с низом обеих
+ * колонок: прокрутка внутри панели шла, а последние строки оставались за
+ * кадром, и список «заканчивался» на середине.
+ *
+ * Меряется расстояние от верха документа, а не от верха экрана: оно не
+ * зависит от текущей прокрутки, поэтому пересчёт не может сам себя
+ * раскачать. Когда высота точная, странице прокручивать нечего — шапка
+ * никуда не уезжает, а панели доезжают до конца.
+ *
+ * 0 — панели не применяются: узкий экран или места слишком мало.
+ */
+function usePaneHeight(ref: RefObject<HTMLDivElement | null>, enabled: boolean): number {
+  const [height, setHeight] = useState(0);
+
+  useEffect(() => {
+    if (!enabled) {
+      setHeight(0);
+      return;
+    }
+
+    const wide = window.matchMedia('(min-width: 1024px)');
+
+    const measure = () => {
+      const node = ref.current;
+      if (!node || !wide.matches) {
+        setHeight(0);
+        return;
+      }
+
+      /*
+       * Мерить надо относительно того, что реально прокручивается.
+       *
+       * Обычно это страница, но полноэкранный режим рассылок — это
+       * контейнер с собственной прокруткой, и там window.scrollY всегда
+       * ноль. Считая от окна, панели в нём получили бы неверную высоту, как
+       * только контейнер прокрутили бы хоть на пиксель.
+       */
+      const scroller = scrollParent(node);
+      const viewport = scroller ? scroller.clientHeight : window.innerHeight;
+      const top = scroller
+        ? node.getBoundingClientRect().top -
+          scroller.getBoundingClientRect().top +
+          scroller.scrollTop
+        : node.getBoundingClientRect().top + window.scrollY;
+
+      const available = viewport - top - spaceBelow(node) - PANE_BOTTOM_GAP;
+      setHeight(available >= PANE_MIN_HEIGHT ? Math.floor(available) : 0);
+    };
+
+    measure();
+
+    // Шапка над сеткой меняет высоту сама: появляется полоса спринта,
+    // сворачивается блок, приходит длинное имя. Наблюдаем за родителем —
+    // это вся страница целиком.
+    const observer = new ResizeObserver(measure);
+    const parent = ref.current?.parentElement;
+    if (parent) observer.observe(parent);
+
+    window.addEventListener('resize', measure);
+    wide.addEventListener('change', measure);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+      wide.removeEventListener('change', measure);
+    };
+  }, [ref, enabled]);
+
+  return height;
+}
+
 export function DeskColumns({
   main,
   side,
   /**
    * Две независимые панели на мониторе вместо одной длинной страницы.
    *
-   * Раньше это была просто липкая правая колонка, и в ней жил баг, который
-   * стоил щита: sticky без ограничения высоты прижимает колонку к верху и
-   * делает всё, что не влезло в экран, недостижимым — страница листается, а
-   * колонка стоит. Ограничить высоту одной колонки мало: пока блок не
-   * «прилип», его низ всё равно висит за нижним краем экрана, и докрутить
-   * туда нечем.
+   * Раньше это была липкая правая колонка, и в ней жил баг, который стоил
+   * щита: sticky без ограничения высоты прижимает колонку к верху и делает
+   * всё, что не влезло в экран, недостижимым. Ограничить высоту одной
+   * колонки оказалось мало — пока блок не «прилип», его низ всё равно висит
+   * за нижним краем экрана.
    *
-   * Поэтому высоту в экран получает вся сетка, а прокрутку — каждая колонка
-   * своя. Тогда обе всегда целиком в кадре и обе доезжают до конца, в каком
-   * бы месте страницы ты ни находился.
+   * Поэтому высоту в экран получает вся сетка — измеренную, а не
+   * посчитанную в CSS, — а прокрутку каждая колонка свою. Тогда обе всегда
+   * целиком в кадре, обе доезжают до конца, и страница под ними не ездит.
    */
   panes = false,
   /**
@@ -431,6 +585,10 @@ export function DeskColumns({
   sideFirst?: boolean;
   className?: string;
 }) {
+  const gridRef = useRef<HTMLDivElement>(null);
+  const paneHeight = usePaneHeight(gridRef, panes && Boolean(side));
+  const on = paneHeight > 0;
+
   // Пустая правая колонка (режим фокуса) не должна оставлять после себя
   // половину экрана пустоты — сетка в этом случае просто не нужна.
   if (!side) return <div className={`space-y-4 ${className}`}>{main}</div>;
@@ -442,9 +600,7 @@ export function DeskColumns({
    * прокрутку страницы: колонки обязаны быть независимыми до конца.
    * Нижний отступ внутри — иначе последняя карточка упирается в край.
    */
-  const pane = panes
-    ? 'lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain lg:pb-6 lg:pr-1 thin-scrollbar'
-    : '';
+  const pane = on ? 'h-full min-h-0 overflow-y-auto overscroll-contain pb-5 pr-1 thin-scrollbar' : '';
 
   // Порядок в DOM задаёт порядок на телефоне, а на мониторе колонки
   // расставляются явно — поэтому одна и та же разметка читается по-разному
@@ -465,19 +621,13 @@ export function DeskColumns({
     </div>
   );
 
-  /*
-   * Сетка липнет к верху и занимает ровно экран.
-   *
-   * top-4 и h-[calc(100vh-2rem)] — одно и то же число: прилипнув, сетка
-   * стоит в 16px от верха, и оставшаяся высота ровно такая. Пока страница
-   * не прокручена, сетка свисает вниз на высоту шапки — это те несколько
-   * десятков пикселей, которые страница и прокручивает.
-   */
-  const shell = panes ? 'lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] lg:items-stretch' : '';
-
   return (
     <div
-      className={`grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] ${shell} ${className}`}
+      ref={gridRef}
+      style={on ? { height: paneHeight } : undefined}
+      className={`grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] ${
+        on ? 'items-stretch' : 'items-start'
+      } ${className}`}
     >
       {sideFirst ? sideCol : mainCol}
       {sideFirst ? mainCol : sideCol}

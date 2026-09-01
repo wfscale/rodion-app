@@ -548,37 +548,58 @@ export function nicheFunnel(contacts: OutreachContact[]): NicheRow[] {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Скользящее сравнение окон                                                  */
+/*  Личный рекорд окна                                                         */
 /* -------------------------------------------------------------------------- */
 
-export type WindowCompare = {
-  /** Сумма за последнюю половину окна. */
-  recent: number;
-  /** Сумма за предыдущую половину. */
-  previous: number;
-  /** Изменение в процентах. null — сравнивать не с чем. */
-  delta: number | null;
-};
+/** Дальше в прошлое не заглядываем: четыре года истории считать незачем. */
+const MAX_LOOKBACK_DAYS = 1500;
 
 /**
- * Две половины одного окна друг против друга.
+ * Лучшие `size` дней подряд за всё время.
  *
- * Календарная неделя для этого не годится: текущая всегда неполная и в среду
- * обязана проигрывать прошлой. «-46%» получалось из одного того, что четверг
- * ещё не наступил, — число не сообщает ничего и при этом бьёт по рукам ровно
- * тогда, когда человек работает нормально.
+ * Заменяет сравнение «эта неделя против прошлой», и это не косметика.
+ * Сравнение с прошлым периодом обязано регулярно выдавать минус — просто
+ * потому, что не каждая неделя сильнее предыдущей. Человек, который в этот
+ * момент работает нормально, получал в лицо «-46%» и терял желание
+ * открывать приложение. Число, которое гасит того, кто и так старается, —
+ * не статистика, а вред.
  *
- * Скользящие окна сравнимы в любой день. Считаются из того же ряда, который
- * нарисован на графике, поэтому цифра под ним всегда про то, что на нём видно.
+ * Рекорд так себя вести не может. Он либо побит — и это праздник, — либо
+ * стоит впереди как планка. Вниз он не идёт никогда.
  */
-export function compareWindows(series: DayPoint[], half: number): WindowCompare {
-  const size = Math.max(0, Math.min(half, Math.floor(series.length / 2)));
-  const tail = series.slice(series.length - size);
-  const head = series.slice(series.length - size * 2, series.length - size);
+export function bestWindow(contacts: OutreachContact[], today: string, size: number): number {
+  if (size <= 0) return 0;
 
-  const add = (rows: DayPoint[]) => rows.reduce((acc, row) => acc + row.sent, 0);
-  const recent = add(tail);
-  const previous = add(head);
+  const counts = new Map<string, number>();
+  let earliest: string | null = null;
 
-  return { recent, previous, delta: deltaPct(recent, previous) };
+  for (const contact of contacts) {
+    if (!wasSent(contact)) continue;
+    const date = (contact.first_contact_date ?? '').slice(0, 10);
+    if (!date || date > today) continue;
+    counts.set(date, (counts.get(date) ?? 0) + 1);
+    if (!earliest || date < earliest) earliest = date;
+  }
+
+  if (!earliest) return 0;
+
+  const span = Math.min(MAX_LOOKBACK_DAYS, daysBetween(today, earliest) + 1);
+  const from = shiftDate(today, -(span - 1));
+
+  let best = 0;
+  let running = 0;
+  const queue: number[] = [];
+
+  for (let i = 0; i < span; i += 1) {
+    const date = shiftDate(from, i);
+    const value = counts.get(date) ?? 0;
+
+    queue.push(value);
+    running += value;
+    if (queue.length > size) running -= queue.shift() ?? 0;
+
+    if (running > best) best = running;
+  }
+
+  return best;
 }
