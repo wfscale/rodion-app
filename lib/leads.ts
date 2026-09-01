@@ -101,3 +101,53 @@ export function summarizeIntake(text: string, parsed: ParsedLead[]): LeadIntakeS
 
   return { added: parsed.length, skipped: Math.max(0, lines - parsed.length) };
 }
+
+/**
+ * Ник телеграма из чего угодно.
+ *
+ * Ник ищут в шапке инстаграма и приносят сюда как придётся: копией из био
+ * («@ivanov»), ссылкой из кнопки («https://t.me/ivanov?start=1»), просто
+ * словом. Собаку при этом приходится дописывать руками — на двадцати
+ * людях это двадцать лишних движений ровно там, где всё и должно быть
+ * быстрым.
+ *
+ * Здесь собака снимается всегда: в поле её рисует сам интерфейс, а хранится
+ * и уходит в ссылку голый ник.
+ */
+export function parseTelegram(raw: string): string {
+  let value = (raw ?? '').trim();
+  if (!value) return '';
+
+  value = value.replace(/^["'`(<\[]+/, '').replace(/["'`)>\],;]+$/, '');
+
+  // Ссылка любого вида: t.me, telegram.me, telegram.dog, с протоколом и без.
+  const link = value.match(/(?:t\.me|telegram\.me|telegram\.dog)\/([^/?#\s]+)/i);
+  if (link) value = link[1];
+
+  // Приглашения в каналы ником не являются.
+  if (/^(joinchat|\+)/i.test(value)) return '';
+
+  value = value.replace(/^@+/, '').replace(/[^A-Za-z0-9_]/g, '');
+
+  return value.slice(0, 32);
+}
+
+/**
+ * Какой текст записать человеку при отправке.
+ *
+ * Свой, если он написан; иначе заготовка, которая стояла в тот момент.
+ * Пустую строку не записываем: «оффер неизвестен» и «оффер пустой» — разные
+ * вещи, и вторая не должна выглядеть как первая.
+ *
+ * Записывается всегда, а не только когда текст правили руками: иначе через
+ * неделю у половины ответивших не будет видно, на что они ответили.
+ */
+export function offerForSend(
+  own: string | null | undefined,
+  fallback: string | null | undefined,
+): string | null {
+  const mine = (own ?? '').trim();
+  if (mine) return mine;
+  const base = (fallback ?? '').trim();
+  return base || null;
+}

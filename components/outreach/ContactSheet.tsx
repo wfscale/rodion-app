@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { BellPlus, BookmarkPlus, MessagesSquare, Trash2 } from 'lucide-react';
+import { BellPlus, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { BottomSheet } from '@/components/BottomSheet';
 import { useLanguage } from '@/components/LanguageProvider';
@@ -123,13 +123,10 @@ type ContactSheetProps = {
   onClose: () => void;
   onSave: (draft: ContactDraft) => void | Promise<void>;
   onDelete: (id: string) => void | Promise<void>;
-  onSaveToOffers: (contact: OutreachContact) => void | Promise<void>;
   /** Поставить напоминание по этому человеку. */
   onAddReminder?: (contact: OutreachContact) => void;
   /** Открыть переписку. undefined — колонки ещё нет (не прогнали migration-v6). */
-  onOpenConversation?: (contact: OutreachContact) => void;
   /** Библиотека офферов открывается со 2-го уровня. */
-  canSaveToOffers?: boolean;
   /** «Следующий шаг» открывается с 4-го уровня. */
   showNextStep?: boolean;
 };
@@ -140,10 +137,7 @@ export function ContactSheet({
   onClose,
   onSave,
   onDelete,
-  onSaveToOffers,
   onAddReminder,
-  onOpenConversation,
-  canSaveToOffers = false,
   showNextStep = false,
 }: ContactSheetProps) {
   const { t, tf, lang } = useLanguage();
@@ -153,7 +147,6 @@ export function ContactSheet({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [savedToOffers, setSavedToOffers] = useState(false);
 
   /**
    * Пока шторка закрывается, contact у родителя уже может стать null —
@@ -176,7 +169,6 @@ export function ContactSheet({
     setError(null);
     setBusy(false);
     setConfirming(false);
-    setSavedToOffers(false);
   }, [open, contactId]);
 
   function patch(part: Partial<ContactDraft>) {
@@ -323,37 +315,27 @@ export function ContactSheet({
           />
         )}
 
-        {/* Переписка — сразу после «следующего шага»: это и есть следующий
-            шаг, только уже случившийся. Счётчик в кнопке нужен, чтобы не
-            открывать её ради проверки, есть ли там что-нибудь. */}
-        {snapshot && onOpenConversation && (
-          <Button variant="ghost" full onClick={() => onOpenConversation(snapshot)}>
-            <MessagesSquare size={16} />
-            {snapshot.conversation?.length
-              ? tf(t.outreach.conversationCount, { n: snapshot.conversation.length })
-              : t.outreach.conversationAdd}
-          </Button>
+        {/*
+          Что именно ушло этому человеку.
+
+          Тексты пробуются разные, и через неделю, когда он отвечает, первый
+          вопрос — «а я ему что писал?». Без этого на него отвечают, листая
+          телеграм. Поле только для чтения: правится оно в строке базы, в тот
+          момент, когда сообщение и уходит.
+        */}
+        {snapshot?.offer_text && (
+          <div>
+            <Label>{t.leads.own}</Label>
+            <p className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-2xl bg-white/[0.04] p-3 text-sm leading-relaxed text-white/70">
+              {snapshot.offer_text}
+            </p>
+          </div>
         )}
 
         {snapshot && onAddReminder && (
           <Button variant="ghost" full onClick={() => onAddReminder(snapshot)}>
             <BellPlus size={16} />
             {t.outreach.addReminder}
-          </Button>
-        )}
-
-        {canSaveToOffers && snapshot && (
-          <Button
-            variant="ghost"
-            full
-            onClick={() => {
-              void onSaveToOffers(snapshot);
-              setSavedToOffers(true);
-            }}
-            disabled={savedToOffers}
-          >
-            <BookmarkPlus size={16} />
-            {savedToOffers ? t.outreach.savedToOffers : t.outreach.saveToOffers}
           </Button>
         )}
 

@@ -4,7 +4,6 @@ import { Minimize2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useApp } from '@/components/AppProvider';
-import { GoalStrip } from '@/components/goals/GoalStrip';
 import { BurnTimer } from '@/components/guard/BurnTimer';
 import { ActivityFeed } from '@/components/home/ActivityFeed';
 import { DailyTasks } from '@/components/home/DailyTasks';
@@ -18,7 +17,6 @@ import { useLanguage } from '@/components/LanguageProvider';
 import type { ContactDraft } from '@/components/outreach/ContactSheet';
 import { SoberMode } from '@/components/sober/SoberMode';
 import { Button, DeskColumns, FullPageLoader, useStickyState } from '@/components/ui';
-import { useGoals } from '@/hooks/useGoals';
 import { useFocusSession } from '@/components/session/SessionProvider';
 import { formatShortDate } from '@/lib/date';
 import { daysUntilDeadline } from '@/lib/mode';
@@ -28,7 +26,6 @@ export default function HomePage() {
   const { t, lang } = useLanguage();
   const router = useRouter();
   const app = useApp();
-  const goals = useGoals();
   const session = useFocusSession();
 
   const [adding, setAdding] = useState(false);
@@ -58,9 +55,6 @@ export default function HomePage() {
   const canFocus = app.can('focus');
   const focusOn = canFocus && focus;
 
-  /** Незакрытые цели, кроме закреплённой: та уже висит наверху. */
-  const otherGoals = goals.goals.filter((goal) => !goal.done && !goal.pinned);
-
   async function handleQuickAdd(draft: ContactDraft) {
     setAdding(true);
     try {
@@ -88,19 +82,6 @@ export default function HomePage() {
         />
       )}
 
-      {/*
-        Цель — над всем остальным и на всю ширину.
-
-        Она отвечает на вопрос «зачем», а счётчик рассылок ниже — на вопрос
-        «сколько сегодня». Порядок именно такой: сначала зачем, потом
-        сколько. Полоса при этом узкая и спорить со счётчиком за внимание
-        не может — у него 96 пунктов против её трёх строк.
-
-        В режиме фокуса цель тоже видна: фокус убирает фон дня, а не смысл.
-      */}
-      {goals.pinned && (
-        <GoalStrip goal={goals.pinned} today={app.today} />
-      )}
 
       {/*
         Две колонки на мониторе: слева всё, чем работают руками, справа фон
@@ -151,24 +132,6 @@ export default function HomePage() {
             )}
 
             <QuickAddOutreach today={app.today} onAdd={handleQuickAdd} busy={adding} />
-
-            {/*
-              Остальные цели — под быстрым вводом.
-
-              Закреплённая висит наверху, но она одна, а целей бывает пять.
-              На мониторе под счётчиком оставалось пустое место, и заполнить
-              его именно целями правильнее всего: это то, ради чего счётчик
-              вообще крутят. Полосы компактные и уводят на страницу целей —
-              вести их отсюда не нужно, нужно видеть.
-            */}
-            {!focusOn && otherGoals.length > 0 && (
-              <div className="space-y-2 pt-1">
-                <p className="section-label px-1">{t.goals.title}</p>
-                {otherGoals.map((goal) => (
-                  <GoalStrip key={goal.id} goal={goal} today={app.today} />
-                ))}
-              </div>
-            )}
 
             {focusOn && (
               <Button variant="ghost" full onClick={() => setFocus(false)}>

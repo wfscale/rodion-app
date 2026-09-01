@@ -9,7 +9,7 @@ import { Button } from '@/components/ui';
 import { copyText } from '@/lib/clipboard';
 import type { Snippet } from '@/lib/types';
 
-type OfferPanelProps = {
+type OfferBoardProps = {
   snippets: Snippet[];
   /** Выбранный оффер. Состояние живёт на странице: его же копируют из строк. */
   active: Snippet | null;
@@ -20,17 +20,16 @@ type OfferPanelProps = {
 };
 
 /**
- * Оффер рядом с базой.
+ * Оффер по умолчанию — тот, что уходит большинству.
  *
- * Раньше за текстом приходилось уходить на другую страницу и возвращаться —
- * на каждого человека из двадцати. Здесь он лежит целиком, без сворачивания
- * в узкое окошко: перед отправкой его перечитывают глазами, а не копируют
- * вслепую.
+ * Лежит рядом с базой и виден целиком: перед отправкой его перечитывают
+ * глазами, а не копируют вслепую. Отдельной страницы под офферы нет —
+ * библиотека, в которую надо уходить и возвращаться, дороже пользы от неё.
  *
- * Выбранным по умолчанию встаёт самый частый — тот же порядок, что и в
- * заготовках. Обычно за один заход по базе оффер не меняют вовсе.
+ * Текст под конкретного человека правится в его же строке: здесь стоит
+ * заготовка, там — то, что реально ушло.
  */
-export function OfferPanel({ snippets, active, onPick, onUse, delay = 0 }: OfferPanelProps) {
+export function OfferBoard({ snippets, active, onPick, onUse, delay = 0 }: OfferBoardProps) {
   const { t } = useLanguage();
 
   const [copied, setCopied] = useState(false);
@@ -87,7 +86,7 @@ export function OfferPanel({ snippets, active, onPick, onUse, delay = 0 }: Offer
           )}
 
           {active && (
-            <p className="whitespace-pre-wrap rounded-2xl bg-white/[0.04] p-3 text-sm leading-relaxed text-white/85">
+            <p className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-2xl bg-white/[0.04] p-3 text-sm leading-relaxed text-white/85">
               {active.content}
             </p>
           )}
