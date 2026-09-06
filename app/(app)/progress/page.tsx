@@ -322,8 +322,6 @@ export default function ProgressPage() {
               sentTotal={funnel.sent}
               closedTotal={funnel.closed}
               daysActive={daysActive}
-              avgDeal={profile.avg_deal_amount ?? 0}
-              onAvgDealChange={(value) => void app.updateProfile({ avg_deal_amount: value })}
             />
           ) : (
             <LockedFeature featureKey="scale" requiredLevel={FEATURE_LEVEL.scale} />

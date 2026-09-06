@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { GlassCard, CardTitle } from '@/components/GlassCard';
 import { useLanguage } from '@/components/LanguageProvider';
-import { Field, PageTitle } from '@/components/ui';
+import { PageTitle } from '@/components/ui';
 import type { Language } from '@/lib/types';
 
 type ScaleDashboardProps = {
@@ -11,8 +10,6 @@ type ScaleDashboardProps = {
   closedTotal: number;
   /** Сколько дней человек в системе — из них считается темп. */
   daysActive: number;
-  avgDeal: number;
-  onAvgDealChange: (value: number) => void;
 };
 
 /** Ниже этого числа рассылок конверсия — случайность, а не показатель. */
@@ -28,29 +25,17 @@ const MIN_SENT_FOR_RATE = 5;
  * зато выглядит как знание — и на него начинают опираться. Поэтому на экране
  * только то, что уже случилось.
  *
- * Средний чек остался: от него считается «сколько рублей приносит одна
- * рассылка» в целях (`rublesPerOutreach`) — там он делится на собственную
- * цену закрытия, а не на догадку.
+ * Средний чек отсюда убран. Его читала ровно одна формула — «сколько рублей
+ * приносит одна рассылка» в целях. Целей больше нет, и поле осталось местом,
+ * куда вводят сумму, а в ответ не меняется ничего: обещание расчёта, которого
+ * не происходит.
  */
 export function ScaleDashboard({
   sentTotal,
   closedTotal,
   daysActive,
-  avgDeal,
-  onAvgDealChange,
 }: ScaleDashboardProps) {
   const { t, lang } = useLanguage();
-
-  // Поле держит собственную строку: пустое поле — это не ноль.
-  const [raw, setRaw] = useState(avgDeal ? String(avgDeal) : '');
-
-  useEffect(() => {
-    setRaw((prev) => {
-      const current = Number(prev.replace(/\D/g, ''));
-      if (current === avgDeal) return prev;
-      return avgDeal ? String(avgDeal) : '';
-    });
-  }, [avgDeal]);
 
   const days = Math.max(1, daysActive);
   const pace = sentTotal / days;
@@ -94,23 +79,6 @@ export function ScaleDashboard({
             <span className="text-base font-bold text-white/35">{t.common.none}</span>
           )}
         </div>
-      </GlassCard>
-
-      <GlassCard delay={1}>
-        <Field
-          label={t.scale.avgDeal}
-          hint={t.scale.avgDealHint}
-          inputMode="numeric"
-          value={raw}
-          onChange={(e) => {
-            const digits = e.target.value.replace(/\D/g, '');
-            setRaw(digits);
-            onAvgDealChange(Number(digits) || 0);
-          }}
-        />
-        {avgDeal > 0 && (
-          <p className="mt-2 text-sm tabular-nums text-white/35">{formatInt(avgDeal)}</p>
-        )}
       </GlassCard>
     </div>
   );

@@ -109,7 +109,7 @@ export function LeadIntake({ known, leadCount, onAdd, delay = 0 }: LeadIntakePro
           {parsed.length > 0 ? tf(t.leads.add, { n: parsed.length }) : t.leads.addEmpty}
         </Button>
 
-        {done !== null ? (
+        {done !== null && (
           <motion.p
             initial={{ opacity: 0, y: -4 }}
             animate={{ opacity: 1, y: 0 }}
@@ -117,8 +117,6 @@ export function LeadIntake({ known, leadCount, onAdd, delay = 0 }: LeadIntakePro
           >
             {tf(t.leads.added, { n: done })}
           </motion.p>
-        ) : (
-          <p className="text-xs leading-relaxed text-white/25">{t.leads.duplicates}</p>
         )}
       </div>
       </Collapsible>

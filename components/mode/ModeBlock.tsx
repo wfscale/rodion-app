@@ -126,18 +126,7 @@ export function ModeBlock({ counters, onBreak }: ModeBlockProps) {
                 </Button>
               </div>
             </motion.div>
-          ) : (
-            <motion.p
-              key="hint"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="mt-3 text-sm leading-snug text-white/30"
-            >
-              {t.mode.autoHint}
-            </motion.p>
-          )}
+          ) : null}
         </AnimatePresence>
       </GlassCard>
     </div>
