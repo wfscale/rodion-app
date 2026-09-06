@@ -73,7 +73,7 @@ export function ShieldCard({
   onAuto,
   delay = 0,
 }: ShieldCardProps) {
-  const { t, tf, days, lang } = useLanguage();
+  const { t, tf, lang } = useLanguage();
   const [confirmPause, setConfirmPause] = useState(false);
 
   // Пока миграция не прогнана, колонок щита в профиле нет. Это не поломка
@@ -204,25 +204,21 @@ export function ShieldCard({
         )}
       </div>
 
-      {/* Цена запаса: сколько работы стоит следующий заряд. */}
-      <p className="mt-3 text-sm text-white/35">
-        {guard.regenIn === 0
-          ? t.guard.regenFull
-          : tf(t.guard.regen, { n: guard.regenIn, unit: days(guard.regenIn) })}
-      </p>
-
-      <p className="mt-2 text-sm leading-relaxed text-white/30">
-        {paused
-          ? t.guard.keepsWorking
-          : guard.charges === 0 && !armed
-            ? t.guard.emptyHint
-            : t.guard.idleHint}
-      </p>
+      {/*
+        Осталась только строка состояния: на привале и с пустым запасом надо
+        сказать, что происходит. Объяснения правил — «три заряда на чёрный
+        день», «новый заряд через два дня» — убраны: их читают один раз, а
+        место они занимают каждый день.
+      */}
+      {(paused || (guard.charges === 0 && !armed)) && (
+        <p className="mt-3 text-sm leading-relaxed text-white/30">
+          {paused ? t.guard.keepsWorking : t.guard.emptyHint}
+        </p>
+      )}
 
       <div className="mt-4 border-t border-divider pt-4">
         <Switch
           label={t.guard.auto}
-          hint={guard.auto ? t.guard.autoHint : t.guard.autoOffHint}
           checked={guard.auto}
           onChange={onAuto}
         />

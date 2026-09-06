@@ -39,8 +39,6 @@ export function ForecastCard({
             <Line label={t.forecast.call} line={data.call} empty={t.forecast.noCalls} />
             <Line label={t.forecast.close} line={data.close} empty={t.forecast.noClosed} />
           </div>
-
-          <p className="mt-3 text-xs leading-relaxed text-white/25">{t.forecast.hint}</p>
         </>
       )}
     </GlassCard>

@@ -226,8 +226,6 @@ export function FollowUpList({
               );
             })}
           </AnimatePresence>
-
-          <p className="pt-1 text-xs leading-relaxed text-white/25">{t.followup.hint}</p>
         </div>
       )}
     </GlassCard>

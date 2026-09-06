@@ -152,7 +152,6 @@ export const en: Dict = {
     quotaPaused: 'Quota on hold',
 
     charges: 'Charges',
-    regen: 'New charge in {n} {unit} at quota',
     regenShort: 'in {n} {unit}',
     regenFull: 'Reserve is full',
     empty: 'No charges',
@@ -169,13 +168,10 @@ export const en: Dict = {
     paused: 'Stopover · day {n}',
     pausedHint:
       'The streak is frozen at {n} and does not grow. Touches and reminders keep coming — the base stays alive.',
-    idleHint: 'Three charges for a bad day. Each one covers exactly one day.',
     emptyHint: 'No charges left. From here the streak is held by work only.',
     keepsWorking: 'Touches and reminders always work — the stopover never touches them.',
 
     auto: 'Auto-save',
-    autoHint: 'If the day ends without the quota, a charge is spent on its own.',
-    autoOffHint: 'A charge is only spent by hand, with the button.',
 
     toastArmed: 'Day is shielded',
     toastDisarmed: 'Charge is back in reserve',
@@ -202,10 +198,6 @@ export const en: Dict = {
     funnelReplied: 'replied',
     funnelCall: 'calls',
     funnelClosed: 'closed',
-
-    hintNoReplies: 'Keep writing. The first reply will come.',
-    hintNextReply: 'To the next reply: ≈ {n} messages',
-    hintAboveAverage: 'Your conversion is above average. Keep going.',
 
     viewCards: 'Cards',
     viewTable: 'Table',
@@ -297,7 +289,6 @@ export const en: Dict = {
     addEmpty: 'Add',
     parsed: 'Parsed: {n}',
     skipped: '{n} skipped',
-    duplicates: 'Repeats and already contacted are dropped automatically.',
     added: 'Added to the list: {n}',
     nothing: 'Nothing parsed. Instagram links or handles are needed.',
 
@@ -360,7 +351,6 @@ export const en: Dict = {
     cold: 'cold',
     silentDays: 'silent for {n}',
     touchNumber: 'touch {n}',
-    hint: 'Intervals grow: 1 → 3 → 7 → 15 → 30 days. After that the lead is considered cold.',
     reasonSilent: 'silent',
     reasonReplied: 'replied then vanished',
     reasonCall: 'call',
@@ -499,7 +489,6 @@ export const en: Dict = {
 
   heatmap: {
     title: 'Heat map',
-    hint: 'Each square is a day. Brighter means more outreach.',
     less: 'less',
     more: 'more',
     empty: 'The map fills itself once the messages start.',
@@ -789,7 +778,6 @@ export const en: Dict = {
     brokeShort: 'Broke',
     heldAll: 'Everything holds.',
     reset: 'Tomorrow starts again.',
-    autoHint: 'The day counts itself. Mark only a slip.',
     brokeConfirm: 'Reset the counter?',
     stages: {
       s0: 'Start today.',
@@ -901,7 +889,6 @@ export const en: Dict = {
     noCalls: 'No calls yet',
     noClosed: 'No deals yet',
     small: 'Numbers appear after {n} messages',
-    hint: 'Counted from your own funnel, all time.',
   },
 
   report: {
@@ -918,8 +905,6 @@ export const en: Dict = {
 
   scale: {
     title: 'Scale dashboard',
-    avgDeal: 'Average deal',
-    avgDealHint: 'Used to work out what one message is worth.',
     pace: 'Current pace',
     perDay: 'messages per day',
     closings: 'closes',

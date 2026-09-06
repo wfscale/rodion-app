@@ -88,7 +88,7 @@ export function FunnelChart({
   onLevelClick,
   highlight = null,
 }: FunnelChartProps) {
-  const { t, tf } = useLanguage();
+  const { t } = useLanguage();
 
   const values = [sent, replied, calls, closed];
   const widths = levelWidths(values);
@@ -135,13 +135,6 @@ export function FunnelChart({
   // Чем глубже уровень, тем ярче полоса: внизу воронки то, ради чего всё.
   const tones = ['bg-white/20', 'bg-white/30', 'bg-white/45', 'bg-white/65'];
 
-  const replyRate = sent > 0 ? replied / sent : 0;
-  const hint =
-    replied === 0 || sent === 0
-      ? t.outreach.hintNoReplies
-      : replyRate > 0.1
-        ? t.outreach.hintAboveAverage
-        : tf(t.outreach.hintNextReply, { n: Math.max(1, Math.round(1 / replyRate)) });
 
   return (
     <GlassCard>
@@ -183,8 +176,6 @@ export function FunnelChart({
           );
         })}
       </div>
-
-      <p className="mt-3 border-t border-divider pt-3 text-sm text-muted">{hint}</p>
     </GlassCard>
   );
 }

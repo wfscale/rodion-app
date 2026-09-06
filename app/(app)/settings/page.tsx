@@ -328,7 +328,6 @@ function SettingsContent() {
 
               <Switch
                 label={t.guard.auto}
-                hint={guard.auto ? t.guard.autoHint : t.guard.autoOffHint}
                 checked={guard.auto}
                 onChange={(value) => {
                   void setShieldAuto(value);
